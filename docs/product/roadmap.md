@@ -1,6 +1,6 @@
 # Roadmap: from design to confidential tier
 
-This is the phased build plan for Loom. It sequences the [marketplace mechanics](./marketplace.md), the [isolation tiers](../platform/isolation.md) and [security model](../platform/security.md), the [serving path](../ml-lifecycle/serving.md), and the [host/renter UX](./deployment.md) into shippable increments. Each phase ships something a real user touches; each has explicit non-goals so we don't gold-plate a phase we haven't validated demand for.
+This is the phased build plan for Loom. It leads with the **self-hostable compute stack** — the single-binary `loomd` core, the [isolation tiers](../platform/isolation.md) and [security model](../platform/security.md), and the [serving path](../ml-lifecycle/serving.md) running on hardware the user already owns ([`../architecture/profiles.md`](../architecture/profiles.md)) — and defers the [marketplace mechanics](./marketplace.md) to a later phase (Phase 3) that layers onto the same components once the core is proven ([ADR-0014](../adr/0014-deployment-profiles-marketplace-optional.md)). Each phase ships something a real user touches; each has explicit non-goals so we don't gold-plate a phase we haven't validated demand for.
 
 **Sizing assumption throughout:** a team of **2–3 strong engineers** (systems-Rust for the agent, distributed-systems for the control plane, ML-infra for the serving/lifecycle layer). Engineer-month (EM) figures are calendar-inclusive of design, build, and hardening — deliberately rough. "Nodes are cattle" is assumed at every phase, not a phase of its own.
 
@@ -14,25 +14,27 @@ This is the phased build plan for Loom. It sequences the [marketplace mechanics]
 - **Sizing:** ~1–2 EM (mostly already spent).
 - **Biggest risk:** Designing past our knowledge — over-specifying things (auctions, tokens, multi-node) we've explicitly punted. Mitigated by the punt list below.
 
-### Phase 1 — MVP: batch jobs on vetted hosts
+### Phase 1 — Self-hostable core
 
-- **Scope:** Rust host agent, **Tier B containers only** (nvidia-container-toolkit; no gVisor yet), outbound-only agent connections + relay/WireGuard data plane ([`../platform/networking.md`](../platform/networking.md)), the control plane (API, scheduler, agent-gateway, metering, Postgres, NATS — [`../platform/control-plane.md`](../platform/control-plane.md)), a renter **CLI**, **batch jobs** with checkpoint-resume, **5 curated images** ([`../ml-lifecycle/environments.md`](../ml-lifecycle/environments.md)), **vetted friendly hosts** only (the 50–100 GPU seed fleet from [`marketplace.md`](./marketplace.md) §6), and **manual payouts** (spreadsheet + Stripe transfers).
-- **Non-goals:** No serverless inference. No gVisor or microVMs. No self-serve host onboarding (hosts are hand-vetted). No public signup. No reputation engine (hosts are trusted by hand). No auction. No web console beyond bare minimum — CLI is the interface.
-- **Exit criteria:** **25 external jobs from 10 users complete successfully**, with **checkpointed-resume demonstrated** (a job survives a mid-run node death and resumes on another node without renter intervention). Metering is accurate to the second and reconciles against manual payout math.
+- **Scope:** The **self-hostable compute stack** — `loomd` control plane + `hostd` host agent + a renter **CLI**, shipped as single static Rust binaries with **embedded SQLite** and no external service dependency (Postgres/NATS are *not* in the core — see the build-vs-buy ledger and [ADR-0013](../adr/0013-single-binary-self-host-control-plane.md)). Supports the **standalone** and **private-fleet** deployment profiles ([`../architecture/profiles.md`](../architecture/profiles.md)): everything collapsed on one GPU box, or the control plane plus your own machines as hosts. **Tier B containers only** (nvidia-container-toolkit; no gVisor yet), outbound-only agent connections + relay/WireGuard data plane ([`../platform/networking.md`](../platform/networking.md)) for the fleet profile, **batch/train jobs** with checkpoint-resume on your own hardware, and **5 curated images** ([`../ml-lifecycle/environments.md`](../ml-lifecycle/environments.md)). Internal validation still uses the **50–100 GPU vetted seed fleet** from [`marketplace.md`](./marketplace.md) §6 as a private fleet.
+- **Non-goals:** No serverless inference. No gVisor or microVMs. No marketplace-layer machinery — no billing, no payouts, no reputation engine, no public signup, no auction. No web console beyond bare minimum — CLI is the interface.
+- **Exit criteria:** **A stranger can self-host the core on one GPU box in <15 min and complete a resumable fine-tune** (clone/install, `loomd` up, submit a job, kill the process mid-run, and have it resume to completion). And, on a private fleet: **25 jobs from 10 users complete successfully** with **checkpointed-resume demonstrated** (a job survives a mid-run node death and resumes on another node without renter intervention). Metering is accurate to the second (and, on the seed fleet, reconciles against manual payout math).
 - **Sizing:** ~9–12 EM. The agent + isolation + control-plane triangle is the heavy lift.
-- **Biggest risk:** Checkpoint-resume across vanishing consumer nodes is genuinely hard and is our core promise — if it's flaky, we have nothing. Mitigate by making it the exit criterion, not a nice-to-have.
+- **Biggest risk:** Checkpoint-resume across vanishing nodes is genuinely hard and is our core promise — if it's flaky, we have nothing. Mitigate by making it the exit criterion, not a nice-to-have.
 
 ### Phase 2 — Serverless inference
 
-- **Scope:** OpenAI-compatible **gateway**, content-addressed **weight cache**, **3–5 popular models** served via vLLM, **keep-warm replicas**, and **mid-stream failover** ([`../ml-lifecycle/serving.md`](../ml-lifecycle/serving.md)). Per-token and per-second inference billing ([`marketplace.md`](./marketplace.md) §2).
+- **Scope:** OpenAI-compatible **gateway**, content-addressed **weight cache**, **3–5 popular models** served via vLLM, **keep-warm replicas**, and **mid-stream failover** ([`../ml-lifecycle/serving.md`](../ml-lifecycle/serving.md)). This lands for **self-hosters too**: the gateway ships **embedded** in `loomd` so a self-hoster serves models from their own GPUs on the standalone/private-fleet profiles ([`../architecture/profiles.md`](../architecture/profiles.md)), with no marketplace required. Per-token and per-second inference billing ([`marketplace.md`](./marketplace.md) §2) is present but only exercised in the hosted layer.
 - **Non-goals:** No disaggregated prefill/decode (Dynamo-style). No custom model uploads yet — curated models only. No multi-region. No autoscaling beyond keep-warm N.
-- **Exit criteria:** **p95 TTFT target on warm replicas** met (concrete number TBD during build — order of low-hundreds of ms for small models on 4090-class), and **mid-stream failover demonstrated** (a replica dies mid-generation and the stream continues from another replica without a client-visible error).
+- **Exit criteria:** **p95 TTFT target on warm replicas** met (concrete number TBD during build — order of low-hundreds of ms for small models on 4090-class), and **mid-stream failover demonstrated** (a replica dies mid-generation and the stream continues from another replica without a client-visible error). A self-hoster can bring up the embedded gateway and serve a curated model from their own box.
 - **Sizing:** ~6–9 EM.
 - **Biggest risk:** Cold-start UX on CGNAT hardware (§ risks below). Warm replicas hide it but cost money; scale-to-zero exposes it. Getting the keep-warm economics and the failover seam right is the whole ballgame.
 
-### Phase 3 — Hardening + marketplace
+### Phase 3 — Hardening + marketplace — DEFERRED
 
-- **Scope:** **gVisor/nvproxy default** for Tier B ([`../platform/isolation.md`](../platform/isolation.md)), **Tier A Cloud Hypervisor + VFIO microVMs** on dedicated rigs, the **reputation engine** (node reliability feeding scheduling + pricing, spec-fraud re-bench, verified badge — [`marketplace.md`](./marketplace.md) §4), **self-serve payouts** (net-30 automated), and **public launch** with self-serve host onboarding.
+> **DEFERRED — resumes when the self-hostable core (Phases 1–2) is proven.** This phase is the hosted **marketplace layer** and all its machinery is parked; the design below stays the record of what we build when marketplace work resumes. The marketplace becomes the third deployment profile ([`../architecture/profiles.md`](../architecture/profiles.md)), optional on top of the same components. See [ADR-0014](../adr/0014-deployment-profiles-marketplace-optional.md).
+
+- **Scope:** **gVisor/nvproxy default** for Tier B ([`../platform/isolation.md`](../platform/isolation.md)), **Tier A Cloud Hypervisor + VFIO microVMs** on dedicated rigs, the **reputation engine** (node reliability feeding scheduling + pricing, spec-fraud re-bench, verified badge — [`marketplace.md`](./marketplace.md) §4), **self-serve payouts** (net-30 automated), and **public launch** with self-serve host onboarding. This is also where the core graduates from embedded SQLite to **Postgres + NATS** at marketplace scale ([ADR-0013](../adr/0013-single-binary-self-host-control-plane.md), [`../platform/backend.md`](../platform/backend.md)).
 - **Non-goals:** No ROCm. No confidential/TEE tier. No multi-node training. No auction pricing.
 - **Exit criteria:** gVisor runs the 5 curated images with no workload-breaking regressions; Tier A microVM boots and passes a GPU workload end-to-end; reputation scores demonstrably move scheduling and price bands; a host onboards self-serve in <10 min and receives an automated net-30 payout; public signup open with fraud controls live.
 - **Sizing:** ~10–14 EM. gVisor compat + microVM bring-up + reputation + payments automation is a lot of independent hard things.
@@ -89,13 +91,14 @@ We are choosing *not* to build these at v1. Each has a predefined trigger:
 
 **We adopt (boring, proven, not our value-add):**
 
+- **SQLite** — embedded single source of truth for the **self-hostable core** (standalone + private-fleet profiles); no separate database process to run ([ADR-0013](../adr/0013-single-binary-self-host-control-plane.md), [`../platform/backend.md`](../platform/backend.md)).
 - **vLLM** — inference engine.
 - **Cloud Hypervisor** — Tier A microVMs.
 - **gVisor** — Tier B hardened sandbox.
 - **WireGuard** — data-plane encryption / NAT traversal.
-- **Postgres** — single source of truth.
-- **NATS** — control/event bus + JetStream.
-- **Stripe** — payments and payouts.
+- **Postgres** — single source of truth **at marketplace scale** (Phase 3+); the core runs on embedded SQLite and graduates to Postgres only when the hosted marketplace layer resumes.
+- **NATS** — control/event bus + JetStream, **at marketplace scale**; the single-box/private-fleet core does not require it.
+- **Stripe** — payments and payouts (marketplace layer — deferred).
 
 **We watch (not yet, but tracking):**
 

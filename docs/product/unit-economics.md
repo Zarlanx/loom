@@ -1,5 +1,7 @@
 # Unit economics: the operator's cost and margin model
 
+Status: hosted-marketplace layer — deferred (see [ADR-0014](../adr/0014-deployment-profiles-marketplace-optional.md) and [../architecture/profiles.md](../architecture/profiles.md)). Kept current as the design of record for when marketplace work resumes.
+
 Status: design draft · July 2026 · owner: product/finance
 
 This is the operator-side financial model for Loom: what a GPU-hour and a million tokens actually *cost us* to broker, what contribution margin survives after the fees and bandwidth and storage we can't avoid, what our fixed burn looks like per [roadmap](./roadmap.md) phase, and how big the fleet has to be before contribution covers burn. It is a **founder-grade reasoning doc, not a pitch** — every number is either pulled from the competitor table in [marketplace.md](./marketplace.md), a publicly checkable infrastructure price (cited inline), or an explicitly labelled assumption in the table below. Where a decision is unsettled we show both branches' math and flag it.

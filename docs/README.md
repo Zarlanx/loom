@@ -5,14 +5,16 @@ This is the design-phase documentation for Loom, a distributed GPU compute platf
 ## Architecture
 
 - [overview.md](architecture/overview.md) — system components, request/job flows, technology decisions at a glance
+- [profiles.md](architecture/profiles.md) — deployment profiles: the same components collapsed onto one box (standalone), spread across your own machines (private fleet), or extended into the hosted marketplace (deferred)
 - [design-review.md](architecture/design-review.md) — red-team self-critique: ranked findings, pre-build spikes, verdict
 
 ## Decisions
 
-- [adr/](adr/README.md) — twelve Architecture Decision Records with context, consequences, and revisit-when triggers
+- [adr/](adr/README.md) — Architecture Decision Records with context, consequences, and revisit-when triggers
 
 ## Platform (the compute fabric)
 
+- [backend.md](platform/backend.md) — backend engineering design: the `loomd`/`hostd` binaries, embedded SQLite core, single-binary self-host control plane, and where Postgres/NATS enter at marketplace scale
 - [host-agent.md](platform/host-agent.md) — the Rust daemon hosts install: lifecycle, metering, hardware attestation, idle-time policy
 - [isolation.md](platform/isolation.md) — sandboxing tiers: containers + nvidia-container-toolkit, gVisor/nvproxy, Cloud Hypervisor + VFIO microVMs
 - [control-plane.md](platform/control-plane.md) — scheduler, job lifecycle, state, billing metering pipeline
@@ -32,7 +34,8 @@ This is the design-phase documentation for Loom, a distributed GPU compute platf
 
 ## Product
 
+- [self-host.md](product/self-host.md) — self-hosting guide: stand up the core on one GPU box or your own private fleet, run a resumable fine-tune, serve models locally
 - [deployment.md](product/deployment.md) — host onboarding, renter quickstart, CLI/UX design
-- [marketplace.md](product/marketplace.md) — pricing, billing, reputation, work verification
-- [roadmap.md](product/roadmap.md) — phased milestones from MVP to TEE tier
-- [unit-economics.md](product/unit-economics.md) — operator cost/margin model, break-even and sensitivity analysis
+- [roadmap.md](product/roadmap.md) — phased milestones from self-hostable core to TEE tier
+- [marketplace.md](product/marketplace.md) — pricing, billing, reputation, work verification (hosted marketplace layer — deferred)
+- [unit-economics.md](product/unit-economics.md) — operator cost/margin model, break-even and sensitivity analysis (hosted marketplace layer — deferred)
