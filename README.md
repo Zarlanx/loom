@@ -23,10 +23,11 @@ The full design lives under [`docs/`](docs/README.md):
 
 | Section | Contents |
 |---|---|
-| [Architecture](docs/architecture/) | System overview, components, job lifecycle, decisions |
-| [Platform](docs/platform/) | Host agent, isolation tiers, control plane, networking, security & trust model |
-| [ML lifecycle](docs/ml-lifecycle/) | Data, training, evaluation, serving, runtime environments |
-| [Product](docs/product/) | Deployment & DX, marketplace mechanics, roadmap |
+| [Architecture](docs/architecture/) | System overview, components, job lifecycle |
+| [ADRs](docs/adr/) | Twelve Architecture Decision Records — what was decided, why, and what it costs |
+| [Platform](docs/platform/) | Host agent, isolation tiers, control plane, networking, security & trust model, wire protocol, renter API |
+| [ML lifecycle](docs/ml-lifecycle/) | Data, training, evaluation, serving, runtime environments, recipe catalog |
+| [Product](docs/product/) | Deployment & DX, marketplace mechanics, roadmap, unit economics |
 
 ## Principles
 

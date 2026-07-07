@@ -125,7 +125,7 @@ Serverless inference only. The gateway is operator-run and is the single point w
 Inbound to gateway:
 ```
 POST /v1/chat/completions
-Authorization: Bearer sk-loom-9f3a…            # real key
+Authorization: Bearer loom_sk_9f3a…            # real key
 X-Forwarded-For: 203.0.113.44                   # renter IP
 { "model": "llama-3.1-70b", "messages": [ … ] }
 ```
@@ -245,7 +245,7 @@ The operator layer is small, but its compromise blast radius is the whole fleet.
 - **mTLS identity.** Every agent↔control-plane and agent↔gateway link is **mutually authenticated** — the agent presents a per-enrollment client certificate, the control plane presents its own. No unauthenticated node can join the fleet or receive jobs; a stolen agent identity is revocable.
 - **Control-plane compromise blast radius — signed job manifests.** The nightmare is a control-plane / database compromise that lets an attacker push arbitrary jobs to every host (mass CSAM generation, crypto-mining, a fleet-wide exfiltration payload). Mitigation: **agents accept only job manifests signed by a control-plane job-signing key held in an HSM/KMS**, separate from the application database. The agent verifies the signature before launching anything. An attacker who pops the Postgres jobs table but not the HSM can corrupt records but **cannot forge a runnable manifest** — the blast radius of a DB breach is bounded to data integrity, not fleet-wide code execution. (This same signature is the enforcement point for `trust_tier` — a manifest can't lie about the tier it's authorized for.)
 - **Secrets handling.** Renter secrets (dataset creds, model registry tokens, `privacy:strict` DEKs) are injected via a **sealed channel** directly into the sandbox's environment at launch — never written to host disk, never logged, never surfaced in job manifests or heartbeats. They live only in guest RAM (§5 key lifecycle) and die with the job.
-- **Supply chain — curated images.** Managed jobs run **curated runtime images only** at launch ([environments referenced in overview.md](../architecture/overview.md)): images are built by the operator, published with **pinned digests**, ship an **SBOM**, and are **vulnerability-scanned** in CI before promotion. The agent verifies the digest before running (per Flow A in [overview.md](../architecture/overview.md)).
+- **Supply chain — curated images.** Managed jobs run **curated runtime images only** at launch ([environments.md](../ml-lifecycle/environments.md)): images are built by the operator, published with **pinned digests**, ship an **SBOM**, and are **vulnerability-scanned** in CI before promotion. The agent verifies the digest before running (per Flow A in [overview.md](../architecture/overview.md)).
 - **Package-proxy policy for jobs.** Jobs that pull Python/JS dependencies do so through an **operator-run PyPI/npm proxy** (default-deny egress means they can't reach the public index directly). The proxy enforces allowlisting / known-good pinning and caches, which blocks typosquat and dependency-confusion attacks from executing on a host and keeps the host's IP out of the dependency-fetch path.
 
 ---
