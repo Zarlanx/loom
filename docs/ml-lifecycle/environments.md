@@ -32,7 +32,7 @@ Images form a **layer graph**: each builds `FROM` the one above it, so the expen
 |---|---|---|---|
 | `base-cuda` | (distro base) | CUDA user-mode toolkit + cuDNN, Python 3.12, `uv`, minimal OS userland. **No PyTorch.** | Foundation for everything; direct use only for custom CUDA/C++ kernels. |
 | `torch` | `base-cuda` | PyTorch 2.x, `torch.compile` + Triton (bundled with torch), FlashAttention, xformers, NCCL. | The default compute image; anything that just needs "PyTorch on a GPU." |
-| `train` | `torch` | Transformers, PEFT, TRL, Unsloth, Axolotl, `bitsandbytes`, Liger-Kernel, `datasets`, `accelerate`, DeepSpeed. | Fine-tuning / training jobs. Driven by [training.md](./training.md). |
+| `train` | `torch` | Transformers, PEFT, TRL, Unsloth, Axolotl, `bitsandbytes`, Liger-Kernel, `datasets`, `accelerate`, DeepSpeed; recipe extras: `diffusers`, `sentence-transformers` (for the diffusion-LoRA / embeddings recipes — see [recipes.md](./recipes.md)). | Fine-tuning / training jobs. Driven by [training.md](./training.md). |
 | `serve-vllm` | `torch` | vLLM + its paged-attention/kernel deps, OpenAI-compatible server. | LLM serving. Driven by [serving.md](./serving.md). |
 | `serve-onnx` | `base-cuda` | ONNX Runtime with CUDA + TensorRT execution providers; TensorRT libs. | ONNX/TensorRT inference for non-PyTorch or exported models. |
 | `data` | `base-cuda` | Polars, DuckDB, HF `datasets`, Ray Data, `pyarrow`. | Dataset prep / ETL. **Spark is a separate JVM image**, not folded in here. |
