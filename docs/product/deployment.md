@@ -122,7 +122,7 @@ An ML engineer maintains a Triton kernel / a PyTorch extension / an inference to
 ```
 loom run \
   --gpu rtx4090,rtx5090,rx9070xt \
-  --image loom/pytorch:2.7-cu126 \
+  --image loom/torch:2026.07-cu126-torch2.12 \
   --repo . \
   -- pytest tests/gpu/ -q
 ```
@@ -144,12 +144,13 @@ The managed-lifecycle flow. Each step is one command; each prints a cost estimat
 
 ```
 # 1. Push a dataset as a versioned manifest (dedup'd, content-addressed)
-loom data push ./sft_data.jsonl --name my-sft:v1
+loom data push ./sft_data.jsonl --name my-sft
+#   → created my-sft@v1
 
 # 2. Fine-tune with a curated recipe (knobs are recipe flags)
-loom train --recipe qlora \
+loom train --recipe qlora-sft \
   --base meta-llama/Llama-3.1-8B \
-  --data my-sft:v1 \
+  --data my-sft@v1 \
   --epochs 3 --lora-r 16 \
   --gpu rtx4090
 #   → estimate: ~1.8 GPU-hr, ~$0.61. Proceed? [Y/n]
@@ -163,13 +164,13 @@ loom eval --suite instruction-following \
 
 # 4. Deploy the adapter behind an OpenAI-compatible endpoint
 loom deploy adapter:my-sft-run-3f2a --name my-model
-#   → https://api.loom.dev/v1  (model = "my-model")
+#   → https://inference.loom.dev/v1  (model = "my-model")
 ```
 
 Then it's a normal OpenAI call:
 
 ```
-curl https://api.loom.dev/v1/chat/completions \
+curl https://inference.loom.dev/v1/chat/completions \
   -H "Authorization: Bearer $LOOM_API_KEY" \
   -d '{"model":"my-model","messages":[{"role":"user","content":"hi"}]}'
 ```
@@ -182,14 +183,14 @@ The 2-minute path, and the lowest-friction way onto the platform:
 
 ```
 loom auth login
-loom keys create --name prod        # prints: sk-loom-...
+loom keys create --name prod        # prints: loom_sk_...
 ```
 
 Then in application code, the only change from OpenAI is the `base_url`:
 
 ```python
 from openai import OpenAI
-client = OpenAI(base_url="https://api.loom.dev/v1", api_key="sk-loom-...")
+client = OpenAI(base_url="https://inference.loom.dev/v1", api_key="loom_sk_...")
 resp = client.chat.completions.create(
     model="llama-3.1-8b-instruct",
     messages=[{"role": "user", "content": "hello"}],
@@ -207,7 +208,7 @@ The CLI is the product for most renters. It's `loom`, single static binary, with
 ```
 loom
 ├── auth        login / logout / whoami / status
-├── keys        create / list / revoke              (inference API keys)
+├── keys        create / list / revoke              (scoped API keys: inference + control plane)
 ├── run         <flags> -- <cmd>   one-shot job on rented GPUs
 ├── train       --recipe ...       managed fine-tune  → training.md
 ├── eval        --suite ...        managed evaluation  → evaluation.md
@@ -322,7 +323,7 @@ Adoption comes from meeting developers where they already are. Priority order:
 
 ## 8. Docs & templates strategy
 
-Copy-paste is the fastest teacher. **Every recipe ships with a runnable quickstart** — `loom train --recipe qlora --help` prints a complete, real command you can paste and run, and each recipe has a matching page with the same block. `loom init [--template qlora|inference|gpu-ci]` scaffolds a project directory (a `loom.toml`, a sample dataset or test, a ready `loom run`/`train` invocation, and for the CI template a working GitHub Actions workflow) so a new user's first act is *editing a working thing*, not authoring from a blank file. We maintain example repos (`loom-labs/examples`) covering each of the §3 narratives end-to-end, and every doc command block is CI-tested against the real CLI so the docs can't rot.
+Copy-paste is the fastest teacher. **Every recipe ships with a runnable quickstart** — `loom train --recipe qlora-sft --help` prints a complete, real command you can paste and run, and each recipe has a matching page with the same block. `loom init [--template qlora-sft|inference|gpu-ci]` scaffolds a project directory (a `loom.toml`, a sample dataset or test, a ready `loom run`/`train` invocation, and for the CI template a working GitHub Actions workflow) so a new user's first act is *editing a working thing*, not authoring from a blank file. We maintain example repos (`loom-labs/examples`) covering each of the §3 narratives end-to-end, and every doc command block is CI-tested against the real CLI so the docs can't rot.
 
 ---
 

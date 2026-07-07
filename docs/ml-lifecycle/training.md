@@ -118,7 +118,7 @@ This is the section that makes Loom a platform rather than a pile of rented GPUs
 The UX target:
 
 ```
-loom train --recipe qlora \
+loom train --recipe qlora-sft \
   --model meta-llama/Llama-3.1-8B \
   --data mydata@v2
 ```
@@ -132,7 +132,7 @@ A **recipe** bundles four things:
 
 `--data mydata@v2` resolves through the data layer's content-addressed manifests and node-local prefetch cache ([data.md](../ml-lifecycle/data.md)), so the recipe knows exactly what it's training on and can pin it into the model card's lineage (§6).
 
-**Recipe families at launch:** `qlora`, `lora`, `full-ft` (multi-GPU-node-gated), `dpo`, `grpo`, `diffusion-lora`, `classifier`, `embedding`.
+**Recipe families at launch:** `qlora-sft`, `lora-sft`, `full-ft-small` (multi-GPU-node-gated), `dpo`, `grpo`, `diffusion-lora`, `classifier-ft`, `embeddings-ft` — the full catalog contract lives in [recipes.md](../ml-lifecycle/recipes.md).
 
 **Escape hatch.** `loom train --script train.py --image loom/base-cuda` runs an arbitrary script on the base image. You get `loom-ckpt`, the data cache, and HF integration; you give up the pre-tuned defaults and the upfront estimate. This is how Axolotl/LLaMA-Factory power users and researchers run whatever they want.
 
