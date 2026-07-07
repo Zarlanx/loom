@@ -179,7 +179,7 @@ Hygiene layer (§3.3): raises the cost of after-the-fact snooping. Applies to bo
 
 ---
 
-## 6. Tier C — confidential computing (phase 4)
+## 6. Tier C — confidential computing (Phase 5 of the [roadmap](../product/roadmap.md))
 
 Tier C is the only tier that provides **in-use confidentiality against the machine's owner**, and it requires hardware consumer rigs do not have. It is a distinct supply pool, not a checkbox on a gaming PC.
 
