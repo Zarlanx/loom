@@ -25,7 +25,7 @@ Everything under `api.loom.dev/v1` is a resource with a stable ID and a small, p
 
 ### 1.2 Authentication & scopes
 
-Auth is an API key: `Authorization: Bearer loom_sk_<random>`. Keys are minted per §4 of the key-management surface below and carry **scopes**. A request presenting a key that lacks the required scope gets `403` with error code `insufficient_scope`.
+Auth is an API key: `Authorization: Bearer loom_sk_<random>`. Keys are minted per the key-management surface below (§3.9) and carry **scopes**. A request presenting a key that lacks the required scope gets `403` with error code `insufficient_scope`.
 
 | Scope | Grants |
 |---|---|
@@ -180,6 +180,7 @@ Notes on the model:
 | `GET` | `/v1/jobs` | List jobs (filter by `state`, `gpu`, `group`, `created_after`). |
 | `GET` | `/v1/jobs/{id}` | Job status: attempt history + live cost. |
 | `GET` | `/v1/jobs/{id}/logs` | **SSE** log stream with resume token. |
+| `GET` | `/v1/jobs/{id}/metrics` | **SSE** live GPU util / mem / power telemetry (powers `loom top`). |
 | `GET` | `/v1/jobs/{id}/artifacts` | List output artifacts (checkpoints, files, pushed refs). |
 | `POST` | `/v1/jobs/{id}/cancel` | Cancel from any non-terminal state. |
 | `POST` | `/v1/jobs/{id}/sessions` | Bootstrap an exec / port-forward session (WS upgrade, §3.2). |
@@ -286,6 +287,13 @@ data: {"state":"running","step":4213}
 
 Event types: `log`, `status`, `cost` (periodic accrued-spend tick), `attempt` (requeue/failover boundary — the `↻ resuming from checkpoint` line in [deployment.md §6](../product/deployment.md#6-failure-ux)), `done`. Streams end with a `done` event; late subscribers still get full history via `?since=0`.
 
+**`GET /v1/jobs/{id}/metrics` — SSE GPU telemetry.** A separate live-only stream (no history/resume) carrying the `nvtop`-style signals behind `loom top` — GPU utilization, VRAM used, and board power, derived from the same NVML samples the agent meters ([control-plane.md §6](./control-plane.md#6-metering--billing-pipeline)). Values are aggregate per attempt; the host is never identified (privacy symmetry, [serving.md §7](../ml-lifecycle/serving.md#7-observability-for-renters)):
+
+```
+event: metrics
+data: {"attempt_no":2,"gpu_util_pct":97,"vram_used_mb":21440,"power_w":312}
+```
+
 **`POST /v1/jobs/{id}/sessions` — exec / port-forward bootstrap.** Interactive access (`loom ssh`, `loom exec`, `loom port-forward`, `loom notebook`) is a **relay-brokered stream**, never an inbound port ([deployment.md §4](../product/deployment.md#4-cli-design), [networking.md §3](./networking.md#3-nat-traversal-for-the-data-plane)). This endpoint returns a short-lived **relay ticket** the client then upgrades to a WebSocket against the relay:
 
 Request:
@@ -311,16 +319,16 @@ Response `201`:
 
 The client opens `Upgrade: websocket` to `relay.url` presenting `ticket`; the relay brokers the stream to the sandbox over the outbound WireGuard/DERP path. Ticket mechanics, punch-vs-relay selection, and abuse resistance are owned by [networking.md](./networking.md#3-nat-traversal-for-the-data-plane); this API only mints the ticket. `loom ssh` shells into the **sandbox**, never the host OS.
 
-### 3.3 Datasets (push flow)
+### 3.3 Datasets (push & pull flows)
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/v1/datasets` | List datasets. |
+| `GET` | `/v1/datasets` | List datasets (`loom data ls`). |
 | `POST` | `/v1/datasets` | Create a dataset (name → id). |
 | `POST` | `/v1/datasets/{id}/versions` | Begin a version; returns presigned multipart PUT targets. |
 | `POST` | `/v1/datasets/{id}/versions/{vid}/commit` | Commit the manifest (Merkle root). |
-| `GET` | `/v1/datasets/{id}/versions/{vid}` | Version + manifest metadata. |
-| `DELETE` | `/v1/datasets/{id}/versions/{vid}` | Delete chunks + issue cache-invalidation. |
+| `GET` | `/v1/datasets/{id}/versions/{vid}` | Version + manifest metadata; `?download=true` returns presigned chunk GET URLs (`loom data pull`). |
+| `DELETE` | `/v1/datasets/{id}/versions/{vid}` | Delete chunks + issue cache-invalidation (`loom data rm`). |
 
 The push flow is **create version → presigned multipart PUTs → commit manifest** — the CLI chunks, content-addresses, and uploads *directly* to object store; the control plane never proxies bytes ([data.md §4](../ml-lifecycle/data.md#4-data-staging-architecture)).
 
@@ -357,6 +365,8 @@ Response returns **only the chunks not already in the store** (dedup by hash —
 { "version_id": "dsv_01J9…", "ref": "ds:my-sft@v1",
   "manifest_root": "sha256:…", "immutable": true }
 ```
+
+The **pull flow** (`loom data pull`) is the mirror image: `GET /v1/datasets/{id}/versions/{vid}?download=true` returns the ordered chunk manifest with presigned **GET** URLs; the CLI fetches chunks directly from object store (never proxied through the control plane) and reassembles by hash, verifying against `manifest_root`. Like push, bytes move renter↔object-store, not through Loom.
 
 `DELETE` removes the renter's chunks and issues cache-invalidation to nodes; shared chunks are refcounted, not orphaned ([data.md §6](../ml-lifecycle/data.md#6-privacy-and-policy)).
 
@@ -474,6 +484,17 @@ The response is a run whose terminal artifact is a **signed report** ([evaluatio
 | `PUT` | `/v1/billing/spend-caps/{scope}` | Set a spend cap (account / deployment / period). |
 
 `billing:read` for reads; `admin` to set caps. `GET /v1/billing/usage?group_by=deployment&period=2026-07` returns per-resource spend for the [deployment.md §5](../product/deployment.md#5-web-dashboard-scope-v1) spend view. Balance/holds mirror [control-plane.md §6](./control-plane.md#6-metering--billing-pipeline). Spend caps enforce at submit/admission (`spend_cap_exceeded`) and fire the `balance.low` webhook (§5) as they approach.
+
+### 3.9 API keys & account
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/v1/account` | Caller's account + resolved key identity — powers `loom auth whoami` / `status`. |
+| `POST` | `/v1/api-keys` | Mint a scoped key (`admin`); returns the `loom_sk_…` secret **once**. |
+| `GET` | `/v1/api-keys` | List keys (id, name, scopes, `expires_at`, `last_used_at`) — powers `loom keys list`; secret never returned. |
+| `DELETE` | `/v1/api-keys/{id}` | Revoke a key immediately. |
+
+This is the `loom keys create / list / revoke` surface ([deployment.md §4](../product/deployment.md#4-cli-design)) and the read behind `loom auth whoami / status`. Key mint/list/revoke require `admin` (§1.2); `GET /v1/account` requires any valid key. Rotation is create-new → cut-over → revoke-old with both valid during overlap (§7). `last_used_at` powers staleness audits.
 
 ---
 
@@ -597,7 +618,7 @@ The inference user needs no Loom SDK at all — the whole point of the OpenAI-co
 
 ## 7. Security notes
 
-- **Key rotation.** `POST /v1/api-keys` mints a scoped key (`admin`); `DELETE /v1/api-keys/{id}` revokes immediately. Keys support an optional `expires_at` and a `last_used_at` read for staleness audits. Rotation is create-new → cut-over → revoke-old, with both valid during overlap.
+- **Key rotation.** The key-management endpoints (§3.9) — `POST /v1/api-keys` mints a scoped key (`admin`), `GET /v1/api-keys` lists, `DELETE /v1/api-keys/{id}` revokes immediately. Keys support an optional `expires_at` and a `last_used_at` read for staleness audits. Rotation is create-new → cut-over → revoke-old, with both valid during overlap.
 - **Scoped keys for CI.** A CI pipeline gets a narrow key — `jobs:write` for the [GitHub Action](../product/deployment.md#7-ecosystem-integrations) test-fan-out, `deploy:write` for a deploy step — never `admin`. Scopes (§1.2) exist precisely so a leaked CI key can't rotate keys or drain balance beyond its spend cap.
 - **No PII required in the prompts path.** Identity-stripping ([security.md §3.2](./security.md#32-protection-1--gateway-identity-stripping--structural), [§4](./security.md#4-gateway-identity-stripping--spec)) means the account/key/IP terminate at the gateway; a node sees an orphan request ID. The API **never requires** PII in a prompt, and renters processing personal data are steered to `privacy: strict` → Tier C ([security.md §8](./security.md#8-compliance--policy-skeleton)). Sealed secrets (§3.7) keep credentials out of manifests and logs.
 - **Audit log.** `GET /v1/audit-log` (`admin`) returns an append-only record of security-relevant actions — key mint/revoke, spend-cap changes, sealed-secret create/revoke, webhook registration — each with actor, timestamp, and `request_id`. Reads of the gateway linkage table are audited operator-side ([security.md §4](./security.md#4-gateway-identity-stripping--spec)) and are **not** exposed here (that store is operator-sensitive, not renter-readable).

@@ -232,7 +232,7 @@ message JobAbort { string attempt_id = 1; string reason = 2; }  // gateway→age
 
 - **`JobOffer` → accept/reject.** The agent verifies `cp_sig` **before anything touches the GPU** (security §7) and runs the local policy gate (host-agent §6). A manifest that violates local policy is rejected with `LOCAL_POLICY`/`THERMAL`/`OWNER_WINDOW`; the control plane requeues elsewhere (control-plane §4). A bad signature is `MANIFEST_SIG` and is never run.
 - **Checkpoint.** `JobCheckpointRequest` is gateway→agent for periodic/preempt/drain snapshots. On **owner-interrupt** (owner starts a game) the agent *initiates* the checkpoint itself and emits `JobCheckpointed` unsolicited — the owner always wins and does not wait for the control plane (host-agent §3, §8). `grace_ms` bounds the window; on expiry teardown force-kills and the attempt requeues from the last checkpoint.
-- **Terminal.** `JobCompleted`/`JobFailed` are the agent's honest execution truth; the control plane still owns billing terminality (control-plane §3.190, §6). Exit-class taxonomy feeds reliability scoring (control-plane §5).
+- **Terminal.** `JobCompleted`/`JobFailed` are the agent's honest execution truth; the control plane still owns billing terminality (control-plane §3, §6). Exit-class taxonomy feeds reliability scoring (control-plane §5).
 - **Retry.** Terminal reports are idempotent by `attempt_id` — a duplicate on reconnect is a no-op (control-plane §3). `JobAbort` is fire-and-force; the agent acks by transitioning and reporting terminal `JobFailed`/aborted.
 
 ### (d) Serving lifecycle
@@ -324,6 +324,9 @@ Agent states are host-agent §3: `Enrolling, Idle, Claimed, Preparing, Running, 
 | Message | Legal agent states | On illegal state |
 |---|---|---|
 | `EnrollRequest` / `EnrollGrant` | Enrolling | reject → StateReport |
+| `ReEnroll` | Idle (gateway→agent; agent re-enters Enrolling) | defer until Idle; StateReport |
+| `RotateCert` | all authenticated (agent→gateway over mTLS; not on token-only bootstrap) | reject if unenrolled → StateReport |
+| `StateReport` | all | always legal (it *is* the resync reply) |
 | `Heartbeat` | all | always legal (carries state) |
 | `JobOffer` | Idle | reject `LOCAL_POLICY`/StateReport (already busy) |
 | `JobAccept` / `JobReject` | Claimed (accept moves Idle→Claimed) | StateReport |
@@ -337,8 +340,11 @@ Agent states are host-agent §3: `Enrolling, Idle, Claimed, Preparing, Running, 
 | `ReplicaReady` | Preparing→Running (serving) | StateReport |
 | `ReplicaDrain` / `ReplicaEvict` | Running (serving), Draining | StateReport |
 | `LogChunk` / `UsageRecord` | Preparing, Running, TearingDown | dropped if attempt unknown (stale) |
+| `UsageAck` | all (gateway→agent; cumulative, prunes spool) | ignored if unknown attempt |
+| `ArtifactUploadGrant` | Running, TearingDown (gateway→agent) | ignored if attempt unknown (stale) |
 | `AttestationQuote` | Preparing (Tier C only) | reject `TIER_UNSUPPORTED` |
 | `UpdateAvailable` | Idle, Draining | defer until Idle; ack-defer |
+| `UpdateApplied` | Idle, Draining (agent→gateway) | always legal (status report) |
 | `ConfigPush` | all | always legal (clamped, §3h) |
 | `Drain` | all non-terminal | enter Draining |
 
