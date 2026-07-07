@@ -82,6 +82,8 @@ The renter's identity — API key, account, source IP, billing linkage — **ter
 
 This does not encrypt the prompt (§4 limits). What it structurally guarantees is that a snooping host **cannot know whose data it is looking at.** A dumped prompt is an orphan: no key, no account, no way to correlate it across requests or sell "Customer X's traffic." The host's dump-VRAM capability is intact; its *value* is destroyed.
 
+The guarantee is precisely about **linkage and identity, not content**: a malicious host still reads the prompt bytes; identity-stripping only denies it the *who*. Two residual re-linkage channels survive and are bounded, not eliminated: (a) **content self-identification** — a prompt whose text carries a stable identifier (a name, an API token echoed in-band, a distinctive corpus) re-links itself regardless of stripped headers, which is on the renter (§4 limits); and (b) **traffic/timing correlation** — an adversary observing arrival timing, request sizes, and per-node hit patterns can attempt to re-cluster one buyer's traffic across nodes. Request scattering (§4) raises the cost of (b); it does not make it information-theoretically impossible.
+
 ### 3.3 Protection 2 — Ephemeral everything — **HYGIENE (raises cost only)**
 
 **Guarantee: defends against lazy / after-the-fact snooping. Does NOT defend against active memory dumping.** Full checklist in §5.
@@ -154,6 +156,7 @@ The node sees a model name, a tier, an orphan request ID, and the prompt. It can
 
 - The serving host **sees the prompt text.** Identity-stripping hides *who*, not *what*. A prompt that contains "my name is Jane Doe, SSN …" leaks that PII to the host regardless — because the **PII is user-controlled content inside the payload**, which no amount of header-stripping touches.
 - The renter is responsible for what they put in prompts. For workloads where the *content itself* is sensitive (not just the identity), standard-tier serving is the wrong tool.
+- **Result integrity applies here too.** A serving host can also *tamper with the response* — return a cheaper model's output, inject content into the token stream, or degrade quality while billing for the advertised model. Identity-stripping does nothing against this. The §3.5 integrity machinery is the defense: canary requests with operator-known expected outputs, spot-check re-execution of a sampled fraction on a second node, and reputation stakes. Per-request streaming makes deterministic byte-matching harder than in batch jobs, so serverless leans on canaries + output-distribution/quality plausibility rather than exact-match comparison.
 - **`privacy: strict`** on a request routes it to **Tier C only** (§6) — the sole configuration where the content is protected from the host. If no Tier C capacity is available, a `strict` request fails closed rather than silently falling back to a snoopable node.
 
 ---
@@ -184,7 +187,7 @@ Tier C is the only tier that provides **in-use confidentiality against the machi
 
 - **CPU TEE:** the sandbox is a confidential VM on **AMD SEV-SNP** or **Intel TDX** — guest memory is hardware-encrypted and integrity-protected, opaque to the host hypervisor and to a host kernel. Both are supported as CVM guests in the ecosystem Loom already uses: **QEMU 10.1** ships TDX and SEV-SNP guest launch (IGVM-packaged firmware, plus VFIO device support for confidential guests) ([QEMU 10.1 release notes, Phoronix](https://www.phoronix.com/news/QEMU-10.1-Released); [QEMU TDX docs](https://www.qemu.org/docs/master/system/i386/tdx.html)), and **Cloud Hypervisor** launches SEV-SNP guests on KVM and MSHV using `guest_memfd`-backed private memory and IGVM firmware, with measured-boot parity to QEMU ([Cloud Hypervisor mshv docs](https://github.com/cloud-hypervisor/cloud-hypervisor/blob/main/docs/mshv.md)). TDX support in Cloud Hypervisor is less mature than SEV-SNP as of mid-2026 — *[unverified: exact Cloud Hypervisor TDX GA status; treat SEV-SNP as the lead path and TDX as tracking].*
 - **GPU CC:** **NVIDIA H100 (Hopper)** was the first GPU with confidential computing — it boots into a mode where a hardware firewall blocks host access to VRAM and the on-die engines, establishes an SPDM-attested session, and moves data across PCIe through **encrypted bounce buffers** (host↔GPU DMA is encrypted and integrity-checked; plaintext exists only inside the GPU's protected memory) ([NVIDIA CC on H100 blog](https://developer.nvidia.com/blog/confidential-computing-on-h100-gpus-for-secure-and-trustworthy-ai/); [NVIDIA Hopper CC whitepaper](https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/HCC-Whitepaper-v1.0.pdf)).
-- **Multi-GPU reality:** Hopper multi-GPU (PPCIe) **does not encrypt NVLink** GPU-to-GPU traffic, so an HGX H100 8-GPU box cannot form one hardware-encrypted confidential memory pool — multi-GPU confidential jobs are constrained on Hopper. **Blackwell** fixes this with TEE-I/O and encrypted NVLink (MPT-CC), enabling attested 1/2/4/8-GPU confidential configurations ([NVIDIA Blackwell architecture](https://www.nvidia.com/en-us/data-center/technologies/blackwell-architecture/); [Blackwell platform announcement](https://nvidianews.nvidia.com/news/nvidia-blackwell-platform-arrives-to-power-a-new-era-of-computing)). Loom's first Tier C target is therefore **single-GPU H100** confidential jobs, with multi-GPU confidential arriving on Blackwell.
+- **Multi-GPU reality:** Hopper *does* support multi-GPU confidential computing via **Protected PCIe (PPCIe)** mode (HGX H100/H200 8-GPU), but PPCIe **leaves GPU-to-GPU NVLink traffic unencrypted** — NVIDIA deliberately removed NVLink encryption there for performance — so an HGX H100 box cannot form a *hardware-encrypted* cross-GPU confidential memory pool: inter-GPU P2P is a plaintext exposure to anyone tapping the NVLink/NVSwitch fabric. **Blackwell** fixes this with TEE-I/O and hardware-encrypted NVLink under **MPT CC** (Multi-GPU Passthrough Confidential Computing), enabling attested 1/2/4/8-GPU confidential configurations with an end-to-end-encrypted P2P domain ([NVIDIA Blackwell architecture](https://www.nvidia.com/en-us/data-center/technologies/blackwell-architecture/); [Blackwell platform announcement](https://nvidianews.nvidia.com/news/nvidia-blackwell-platform-arrives-to-power-a-new-era-of-computing)). Loom's first Tier C target is therefore **single-GPU H100** confidential jobs — where no cross-GPU NVLink exposure exists — with hardware-encrypted multi-GPU confidential arriving on Blackwell.
 
 ### 6.2 Attestation + key-release flow
 
@@ -193,10 +196,10 @@ The trust primitive is: **the renter (or a key service acting for them) releases
 ```mermaid
 sequenceDiagram
     actor Renter
-    participant KS as Key Service (renter-controlled or operator KMS)
+    participant KS as Key Service - renter-controlled or operator KMS
     participant CP as Control Plane
-    participant Enc as CVM Enclave (SEV-SNP/TDX)
-    participant GPU as H100/Blackwell (CC mode)
+    participant Enc as CVM Enclave - SEV-SNP/TDX
+    participant GPU as H100/Blackwell CC mode
 
     CP->>Enc: launch confidential job image (measured boot)
     Enc->>GPU: establish SPDM-attested session (VRAM firewall on)
@@ -225,7 +228,7 @@ Versus a normal VFIO passthrough (Tier A): the GPU boots in CC mode with the **V
 
 TEEs raise the bar from "any host root can dump your data" to "an adversary must defeat the hardware." That bar is **not infinite**, and we state it:
 
-- **Attack history (one line):** CPU TEEs have a live research literature of side-channel and physical attacks — ciphertext side-channels on deterministic memory encryption, controlled-channel / access-pattern leaks, and hardware attacks such as **BadRAM** memory aliasing and the 2025 **TEE.fail** sub-$1,000 DDR5 memory-bus interposer that extracted secrets from SGX/TDX/SEV-SNP enclaves ([TEE.fail, The Hacker News](https://thehackernews.com/2025/10/new-teefail-side-channel-attack.html); [BadRAM](https://badram.eu/badram.pdf); [CounterSEVeillance, NDSS 2025](https://www.ndss-symposium.org/wp-content/uploads/2025-1038-paper.pdf)).
+- **Attack history (one line):** CPU TEEs have a live research literature of side-channel and physical attacks — ciphertext side-channels on deterministic memory encryption, controlled-channel / access-pattern leaks, and hardware attacks such as **BadRAM** memory aliasing and the 2025 **TEE.fail** sub-$1,000 DDR5 memory-bus interposer that extracted secrets from SGX/TDX/SEV-SNP enclaves ([TEE.fail, The Hacker News](https://thehackernews.com/2025/10/new-teefail-side-channel-attack.html); [BadRAM](https://badram.eu/badram.pdf); [CounterSEVeillance, NDSS 2025](https://www.ndss-symposium.org/wp-content/uploads/2025-1038-paper.pdf)). Note this reaches our stack directly: TEE.fail forged valid attestation quotes by extracting the CPU-TEE provisioning key, and because NVIDIA GPU-CC attestation chains to the CPU-TEE root (§6.2), a forged CPU quote can undermine the GPU key-release decision as well — the attestation flow is only as strong as the weakest root it composes.
 - **Our bar, stated to renters:** Tier C protects against a **snooping operator or a software-level malicious host** — the realistic Loom threat. It does **not** promise protection against a nation-state physical lab with a DRAM interposer on the specific machine your job landed on. A renter whose threat model includes that adversary should not run on a rented machine at all. We will not market Tier C as unbreakable.
 
 ### 6.5 Hardware sourcing reality
@@ -272,9 +275,11 @@ The table a principal engineer signs. Each row is an **accepted** risk given the
 | R6 | Control-plane/DB compromise → fleet-wide malicious jobs | Operator | HSM-signed job manifests; agent verifies (§7) | **Medium** (bounded to data integrity) | Mitigated |
 | R7 | Payment fraud / stolen-card compute | All | KYC-lite tiers, risk scoring, egress via operator (§2, §8) | **Medium** | Mitigated |
 | R8 | Host IP blamed for renter abuse | A / B | Default-deny egress; risky classes via operator egress | **Low** | Mitigated |
-| R9 | Tier C hardware attack (TEE.fail/BadRAM-class physical) | C | Out of scope vs nation-state physical; honest bar (§6.4) | **Low** (narrow adversary) | Accepted, disclosed |
+| R9 | Tier C hardware attack (TEE.fail/BadRAM-class physical incl. forged CPU-TEE attestation reaching the GPU key-release chain) | C | Out of scope vs nation-state physical; honest bar (§6.4); attestation is only as strong as its weakest composed root | **Low** (narrow adversary) | Accepted, disclosed |
 | R10 | Trojaned agent / malicious update | Host | Signed binary, pinned key, no-downgrade, mTLS (§7) | **Low** | Mitigated |
 | R11 | Supply-chain (dependency confusion, poisoned image) | A / B | Curated digest-pinned images, SBOM+scan, package proxy (§7) | **Low** | Mitigated |
+| R12 | Traffic/timing correlation re-links a buyer's scattered requests (defeats identity-stripping) | B (serverless) | Request scattering raises cost only; not information-theoretic (§3.2, §4) | **Low–Medium** | Accepted, disclosed |
+| R13 | Serving host tampers with the response / token stream (wrong model, injected or degraded output) | B (serverless) | Canaries + spot-check re-execution + quality plausibility + reputation stakes (§3.5, §4) | **Low–Medium** (bounded by sampling + stake) | Mitigated |
 
 The load-bearing acceptance is **R1**: on consumer hardware, confidentiality against an active malicious host is *not* achieved, only cost-raised and disclosed. Any renter whose threat model does not tolerate R1 must use Tier C. This is the honest bottom line of the whole trust model.
 
@@ -286,5 +291,5 @@ The load-bearing acceptance is **R1**: on consumer hardware, confidentiality aga
 - **Result-integrity sampling rate.** What are the actual *p* values (redundant-execution rate) and canary frequencies per host-reputation band that make cheating negative-EV without pricing Loom out of the market? A [marketplace.md](../product/marketplace.md) economics calibration.
 - **Request-scattering vs KV-cache efficiency.** How hard can we scatter one customer's requests across hosts (privacy) before we lose too much prefix-cache reuse (cost/latency)? Needs a measured trade-off in [serving.md](../ml-lifecycle/serving.md).
 - **Cloud Hypervisor TDX maturity.** SEV-SNP is the confirmed lead path for Tier C on Cloud Hypervisor; TDX guest support maturity there needs re-checking before we commit a TDX-first Tier C. *[unverified as of mid-2026.]*
-- **Attestation-gated custom images.** Can Tier C attestation be the escape valve for the curated-image restriction (§7) — i.e. allow renter custom images *only* on the attested tier, where the measurement proves what ran? This ties the [environments](../architecture/overview.md) graduation path to the trust tier.
+- **Attestation-gated custom images.** Can Tier C attestation be the escape valve for the curated-image restriction (§7) — i.e. allow renter custom images *only* on the attested tier, where the measurement proves what ran? This ties the [environments](../ml-lifecycle/environments.md) graduation path to the trust tier.
 - **`privacy: strict` capacity.** `strict` fails closed if no Tier C node is free (§4). What's the right supply-provisioning and queuing model so failing closed doesn't make the strict tier unusable in practice?
