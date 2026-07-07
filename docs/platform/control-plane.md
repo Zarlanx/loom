@@ -8,6 +8,8 @@ The design pressure that shapes everything below: **hosts are single NAT'd consu
 
 Loom's control plane is a small set of stateless (or near-stateless) services around one Postgres database and one NATS cluster.
 
+> **Packaging note.** The services described in this document are *logical* roles, not separate deployments. They are realized as a single Rust binary — **`loomd`** — with API, scheduler, embedded inference gateway, and agent-gateway as in-process subsystems, backed by an **embedded SQLite store and an in-process queue (with a durable outbox table) by default**. The Postgres + NATS pairing described throughout this doc is the **marketplace-scale** configuration (ADR-0013): the same code behind a repository trait and a bus trait, with heavier backends switched on. The engineering realization — crate layout, frameworks, `loomd` internals, and the SQLite→Postgres cutover — is specified in [backend.md](./backend.md); the deployment profiles that select these backends are in [../architecture/profiles.md](../architecture/profiles.md).
+
 ```mermaid
 flowchart TB
   subgraph clients [Clients]
@@ -270,6 +272,8 @@ flowchart LR
 6. **Fraud checks live here.** Beyond per-record plausibility, the aggregator **cross-checks reported utilization against the node's benchmark fingerprint** — a node claiming 100% util at throughput its GPU can't reach, or util that doesn't track the job's known compute profile, is a fraud signal that both dings reliability (§5) and holds payout for review.
 
 Pricing/payout *mechanics* (fees, currencies, payout schedules) are the marketplace doc's ([`../product/marketplace.md`](../product/marketplace.md)) concern; the control plane owns the *metering and accounting integrity* — turning trustworthy seconds into balanced ledger entries.
+
+This whole JetStream-native pipeline (durable `usage` stream, aggregator, billing hold, payout accrual) is **marketplace-profile machinery** — the money path only exists among untrusting strangers. In the self-host profiles ([`../architecture/profiles.md`](../architecture/profiles.md)) there is no billing: metering still runs, but only as **local usage accounting** (per-job seconds/util for the operator's own visibility), with no balance holds, payouts, or fraud clawback, and the in-process bus stands in for JetStream.
 
 ## 7. API surface sketch
 

@@ -1,5 +1,7 @@
 # Marketplace: pricing, billing, reputation, verification
 
+Status: hosted-marketplace layer — deferred (see [ADR-0014](../adr/0014-deployment-profiles-marketplace-optional.md) and [../architecture/profiles.md](../architecture/profiles.md)). Kept current as the design of record for when marketplace work resumes.
+
 This document defines the economic layer of Loom: how compute is priced, how money moves, how we keep hosts honest and renters safe, and how we bootstrap a two-sided market from zero. It assumes the technical seams described in [`../platform/control-plane.md`](../platform/control-plane.md) (metering, billing pipeline, reliability scoring), [`../platform/security.md`](../platform/security.md) (trust tiers, work verification), and [`../ml-lifecycle/serving.md`](../ml-lifecycle/serving.md) (serverless inference, keep-warm). Renter- and host-facing UX lives in [`deployment.md`](./deployment.md).
 
 The guiding principle: **Loom sells a managed ML lifecycle on top of marketplace-priced silicon.** Competitors rent you a raw box; we rent you a job that checkpoints, an inference endpoint that fails over, and an eval harness that runs the same model across five GPU classes. That difference is where our margin has to come from, because on raw hourly price we are competing with hosts who will undercut anyone.

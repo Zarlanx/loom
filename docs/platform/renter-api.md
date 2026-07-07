@@ -37,6 +37,8 @@ Auth is an API key: `Authorization: Bearer loom_sk_<random>`. Keys are minted pe
 
 Read of a resource requires the matching write scope or `billing:read` where noted; there is no separate `*:read` scope in v1 (write implies read of the same resource family). Inference gateway requests (§4) require **any valid key** — the gateway checks the account and per-key rate limits, not fine-grained scopes, matching OpenAI's key model. `admin` is the CI/rotation scope; issue narrow keys for pipelines (§7 security notes).
 
+**Profile note.** The scoped `loom_sk_` API-key system described here applies to fleet and hosted deployments. In the **standalone** self-host profile there is one trusted operator, so auth collapses to a **single local admin token** created at `loom init` (see [`../product/self-host.md`](../product/self-host.md)) that carries full scope implicitly — no key-minting, scoping, or rotation ceremony. The endpoints below are identical across profiles; standalone simply issues that one token and skips the key-management routes (§3.9).
+
 ### 1.3 Idempotency
 
 Every `POST` that creates or mutates state accepts an `Idempotency-Key: <client-uuid>` header. The server stores the `(account, idempotency_key)` → response mapping for **24 h**. A retry with the same key returns the original response (same status, same body, `Idempotency-Replayed: true`) and never creates a second resource. This is the renter-facing surface of the exactly-once machinery in [control-plane.md §3](./control-plane.md#3-job-lifecycle-state-machine); a flaky laptop uplink retrying `POST /v1/jobs` never double-submits. A key reused with a **different** request body returns `422` `idempotency_key_reused`.

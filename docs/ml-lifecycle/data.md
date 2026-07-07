@@ -111,7 +111,7 @@ This makes Loom's flaky-node economics honest: a requeue onto a fresh node re-ru
 dataset manifest hash  +  code/image digest  +  base-model hash  →  output checkpoint hash
 ```
 
-Every training or processing job stamps this into its record, so any checkpoint can be traced back to the exact data version, image, and base model that produced it — the foundation for reproducibility and for the [evaluation](evaluation.md) story. This is *lightweight* by design: a provenance edge in the job ledger (Postgres, per the [control plane](../platform/control-plane.md)), not a heavyweight metadata store.
+Every training or processing job stamps this into its record, so any checkpoint can be traced back to the exact data version, image, and base model that produced it — the foundation for reproducibility and for the [evaluation](evaluation.md) story. This is *lightweight* by design: a provenance edge in the job ledger (the control-plane store — embedded SQLite in self-host, Postgres at marketplace scale, per the [control plane](../platform/control-plane.md)), not a heavyweight metadata store.
 
 **External integrations, for teams that bring them.**
 - **HF dataset revisions** map naturally onto Loom manifests — pin `some/corpus@<revision>` and Loom records that revision in lineage; the immutable-manifest model mirrors HF's revision model.

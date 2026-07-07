@@ -68,7 +68,7 @@ Every message is **length-prefixed protobuf**: a `uint32` big-endian byte length
 - **Size.** Usage records and heartbeats are high-frequency on a bandwidth-constrained residential uplink (networking §7). Binary encoding of the mostly-numeric telemetry is materially smaller than JSON, and every byte on the uplink competes with the owner's Netflix.
 - **Determinism for signing.** `UsageRecord` is signed (§3f). Protobuf gives a stable, canonical-enough byte layout to sign over the serialized message bytes (we sign the *bytes on the wire*, §6), avoiding JSON's whitespace/key-order ambiguity.
 
-**Human-debuggable JSON stays in tooling.** The `loom-host` CLI and gateway admin tools render any captured frame to pretty JSON via protobuf reflection. The wire is binary; the debugging surface is JSON. We do not pay JSON's size/ambiguity cost on the wire to buy readability we can synthesize on demand.
+**Human-debuggable JSON stays in tooling.** The `loom-hostd` CLI and gateway admin tools render any captured frame to pretty JSON via protobuf reflection. The wire is binary; the debugging surface is JSON. We do not pay JSON's size/ambiguity cost on the wire to buy readability we can synthesize on demand.
 
 ### 2.2 Envelope
 
@@ -361,7 +361,7 @@ Agent states are host-agent §3: `Enrolling, Idle, Claimed, Preparing, Running, 
 | **Running** | job keeps running; agent spools usage + logs locally | Reconnect < 90 s: replay spool, continue. > 90 s: control plane marked `lost` and requeued from last checkpoint (control-plane §3); on reconnect the agent's `lease_fence` is stale, so its late terminal report is **rejected** and it tears down the orphaned job. |
 | **Checkpointing** | finish the checkpoint to object store if possible (bulk plane, independent of control channel) | On reconnect, send `JobCheckpointed`. If a requeued attempt already resumed from an *earlier* checkpoint, the newer checkpoint is redundant but harmless (content-addressed, dedup by hash). |
 
-**Control-plane restart.** Agents hold outbound connections; a gateway restart drops them, agents reconnect with backoff (§1.3) and each sends a `StateReport`. The gateway rebuilds live-attempt state by reconciling reports against Postgres (the source of truth, control-plane §1). No agent-side state is lost because the agent *is* the ground truth for execution; the control plane re-derives its view.
+**Control-plane restart.** Agents hold outbound connections; a gateway restart drops them, agents reconnect with backoff (§1.3) and each sends a `StateReport`. The gateway rebuilds live-attempt state by reconciling reports against the store (the source of truth — SQLite in self-host, Postgres at marketplace scale, control-plane §1). No agent-side state is lost because the agent *is* the ground truth for execution; the control plane re-derives its view.
 
 **Split-brain guard — lease fencing.** Two agents must never both believe they hold the same `attempt_id`. This is prevented by **monotonic fencing tokens**:
 

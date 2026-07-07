@@ -16,7 +16,7 @@ This document specifies the agent: its design goals, process architecture, lifec
 
 **Safe by default.** The agent claims the GPU only when the owner has opted in *and* the machine satisfies the owner's idle policy (§6, §8). Out of the box, a freshly installed agent enrolls and sits idle; it does nothing to the GPU until the owner configures a scheduling window or flips "available now."
 
-**One-command install.** `curl … | sh` fetches a signed static binary, drops a `loom-host` CLI, installs a systemd unit, and walks the owner through enrollment. Target: under 10 minutes, matching the product promise in [deployment.md](../product/deployment.md).
+**One-command install.** `curl … | sh` fetches a signed static binary, drops a `loom-hostd` CLI, installs a systemd unit, and walks the owner through enrollment. Target: under 10 minutes, matching the product promise in [deployment.md](../product/deployment.md).
 
 **Unattended self-update.** Hosts will not babysit this. The agent updates itself from signed releases on a staged schedule and rolls back automatically on a crash-loop (§9).
 
@@ -28,7 +28,7 @@ The agent is one tokio multi-threaded runtime hosting a set of long-lived tasks 
 
 ```mermaid
 flowchart TB
-    subgraph agent["loom-host agent (unprivileged main process)"]
+    subgraph agent["loom-hostd agent (unprivileged main process)"]
         CC["Control-channel client<br/>(QUIC/WSS, mTLS, heartbeats)"]
         HM["Hardware monitor<br/>(NVML / rocm-smi poll)"]
         SS["Sandbox supervisor<br/>(drives Tier B / Tier A)"]
@@ -118,7 +118,7 @@ Be honest about what this does and does not buy:
 - **It does not buy** protection against a determined adversary with *better* hardware impersonating *worse* hardware, or one who records genuine benchmark traces and replays them. A host with a real 4090 can always pass a 4090 benchmark and then quietly downclock, share the GPU with their own gaming session, or throttle the tenant. The fingerprint is a *floor on capability at enrollment*, not a continuous guarantee.
 - **Mitigations layer on top:** periodic surprise re-verification (below), renter-side work verification and reputation ([marketplace.md](../product/marketplace.md)), and — for renters who need cryptographic assurance — the attestable TEE tier ([security.md](./security.md)). The benchmark fingerprint is the cheap first line, not the whole defense.
 
-**Enrollment token flow.** The owner runs `loom-host enroll --token <T>`, where `T` is a short-lived single-use token minted by the control plane when the owner links the machine to their account. The agent generates a keypair locally, sends the public key + inventory + benchmark fingerprint + `T` over the mTLS control channel. The control plane verifies `T`, binds the node identity to the account and the presented public key, and returns a long-lived node certificate. The private key never leaves the host and lives only in memory plus an encrypted-at-rest keystore file (§10).
+**Enrollment token flow.** The owner runs `loom-hostd enroll --token <T>`, where `T` is a short-lived single-use token minted by the control plane when the owner links the machine to their account. The agent generates a keypair locally, sends the public key + inventory + benchmark fingerprint + `T` over the mTLS control channel. The control plane verifies `T`, binds the node identity to the account and the presented public key, and returns a long-lived node certificate. The private key never leaves the host and lives only in memory plus an encrypted-at-rest keystore file (§10).
 
 **Periodic re-verification.** The control plane periodically schedules an unannounced re-run of the benchmark during idle windows and compares the profile against enrollment (and against peers with the same claimed card). Drift beyond tolerance flags the node for review and can suspend payouts. Re-verification is cheap, rate-limited, and never runs while a tenant job holds the GPU.
 
@@ -233,10 +233,10 @@ Metering must be accurate enough to bill per-second and cheap enough to be invis
 The owner is the customer here as much as the renter is. Controls are layered:
 
 - **Config file** — `/etc/loom/host.toml`: scheduling windows (e.g. "available 01:00–08:00 and whenever idle > 15 min"), power cap (watts), thermal cap (°C — vacate if the GPU crosses it), max VRAM/GPU fraction offered, allowed isolation tiers, cache size cap, do-not-disturb default.
-- **`loom-host` CLI** — `enroll`, `status`, `pause`, `resume`, `eject`, `logs`, `config edit`, `update`. Primary interface; scriptable.
-- **Optional tray / TUI status** — a small status surface (system-tray icon on desktop installs, `loom-host top` TUI otherwise) showing current state, live earnings, GPU temp/power, and current tenant tier. Optional and off by default on headless boxes.
+- **`loom-hostd` CLI** — `enroll`, `status`, `pause`, `resume`, `eject`, `logs`, `config edit`, `update`. Primary interface; scriptable.
+- **Optional tray / TUI status** — a small status surface (system-tray icon on desktop installs, `loom-hostd top` TUI otherwise) showing current state, live earnings, GPU temp/power, and current tenant tier. Optional and off by default on headless boxes.
 - **Scheduling windows & idle policy** — the policy engine (§2) continuously answers "may a job run now?" from windows + live signals (foreground GPU process detection via sysinfo/NVML, do-not-disturb, thermals). If the answer flips to *no* mid-job, that is the owner-interrupt transition (§3).
-- **Instant eject** — `loom-host eject` (and the tray button, *"Give me my GPU back"*). The running job gets a bounded checkpoint window (configurable, default on the order of a minute; the control plane advertises this SLA to renters so pricing reflects it), after which it is force-killed and teardown runs. The owner never waits indefinitely. **SLA implication:** jobs that can't checkpoint fast lose in-flight progress on eject — this is priced in, and renters who need eject-proof runs choose dedicated/data-center capacity, not consumer nodes. Nodes are cattle; the control plane requeues.
+- **Instant eject** — `loom-hostd eject` (and the tray button, *"Give me my GPU back"*). The running job gets a bounded checkpoint window (configurable, default on the order of a minute; the control plane advertises this SLA to renters so pricing reflects it), after which it is force-killed and teardown runs. The owner never waits indefinitely. **SLA implication:** jobs that can't checkpoint fast lose in-flight progress on eject — this is priced in, and renters who need eject-proof runs choose dedicated/data-center capacity, not consumer nodes. Nodes are cattle; the control plane requeues.
 
 ---
 
@@ -248,7 +248,7 @@ The owner is the customer here as much as the renter is. Controls are layered:
 - **systemd unit, least privilege.** The agent runs as a systemd service with `Restart=on-failure`, restart backoff, and a hardened unit. Here we must be honest: **driving containers and microVMs requires substantial privilege** — cgroup management, mount/unmount, network-namespace setup, VFIO binding, GPU reset. You cannot do those fully unprivileged.
 
   So we split privilege:
-  - **`loom-host` main process** runs unprivileged (its own service user). It holds the control channel, does all policy, metering, logging, caching, and orchestration. This is the large, network-facing, complex surface — and it has no ambient root.
+  - **`loom-hostd` main process** runs unprivileged (its own service user). It holds the control channel, does all policy, metering, logging, caching, and orchestration. This is the large, network-facing, complex surface — and it has no ambient root.
   - **`loom-hostd-helper`** is a *small, auditable* root (or narrowly-capability'd: `CAP_SYS_ADMIN`, `CAP_NET_ADMIN`, `CAP_SYS_RESOURCE`, device access) helper that does *only* the privileged primitives — spawn runc/CH, set up cgroups/mounts/netns, bind VFIO, issue GPU reset — behind a tight command API over a UNIX socket, with fds passed via `SCM_RIGHTS`. It contains no network code and no LLM-adjacent logic. Its whole job is to be small enough to review.
 
   This keeps the blast radius of a bug in the big process off root, while acknowledging plainly that the *system as a whole* holds real privilege — pretending otherwise would be dishonest.

@@ -24,6 +24,8 @@ Three design consequences fall directly out of these budgets:
 
 We publish these budgets on the marketing site and show a live "typical setup time" counter derived from real p50s. Under-promising here is a competitive weapon: the incumbent experience for renting consumer GPUs is a multi-hour yak-shave.
 
+> **Self-hosting is a first-class deployment.** Everything below onboards a host or renter onto the *hosted marketplace* we operate. But the same stack runs entirely on your own machines with no marketplace, no billing, and no operator in the loop — a single ML engineer on one GPU box, or a small team turning a few spare rigs into a private training cluster. That path has its own guide: **[self-host.md](./self-host.md)** (the standalone and private-fleet quickstarts), backed by the deployment profiles in **[../architecture/profiles.md](../architecture/profiles.md)**. If you want to *run* Loom rather than *join* it, start there; the marketplace onboarding in this document is for the hosted service.
+
 ---
 
 ## 2. Host onboarding walkthrough
@@ -38,17 +40,17 @@ curl -fsSL https://get.loom.dev | sh
 
 We are not going to pretend `curl | sh` is above reproach — piping a remote script straight into a shell is asking a stranger to trust us with root-adjacent privileges on their machine. Here is exactly what we do to earn that trust, stated plainly so a skeptical host can verify it:
 
-- **The installer script is tiny and auditable.** `curl -fsSL https://get.loom.dev` with no `| sh` prints the script to your terminal. It does three things: detect OS/arch, download the matching `loom-host` binary, and verify it. Read it before you run it — we link to the exact script in the docs and it's the same file served at that URL.
+- **The installer script is tiny and auditable.** `curl -fsSL https://get.loom.dev` with no `| sh` prints the script to your terminal. It does three things: detect OS/arch, download the matching `loom-hostd` binary, and verify it. Read it before you run it — we link to the exact script in the docs and it's the same file served at that URL.
 - **The binary is checksummed and signed.** The installer verifies a SHA-256 against a checksum served over a separate TLS-pinned path, then verifies a [minisign](https://jedisct1.github.io/minisign/)/cosign signature against a public key baked into the installer. A tampered CDN can't hand you a malicious binary without also breaking the signature.
 - **Distro packages are coming.** `apt`/`dnf` repos and a Homebrew tap (for the renter CLI) land shortly after GA for hosts who won't run `curl | sh` on principle — same signed artifacts, distributed through package-manager trust. We say "later" honestly: it's not day-one.
 - **Outbound-only, unprivileged main process.** The agent never opens an inbound port and runs its main process unprivileged, with a small root helper for exactly the operations that need it. That posture is specified in [host-agent.md](../platform/host-agent.md) §2 — worth linking a nervous host to directly.
 
-The installer drops the `loom-host` CLI, installs a `systemd` unit (`loom-host.service`), and hands off to enrollment. Total wall time so far: seconds.
+The installer drops the `loom-hostd` CLI, installs a `systemd` unit (`loom-hostd.service`), and hands off to enrollment. Total wall time so far: seconds.
 
 ### Step 1 — enroll
 
 ```
-loom-host enroll --token LOOM-8F3A-...-QK29
+loom-hostd enroll --token LOOM-8F3A-...-QK29
 ```
 
 The enrollment token comes from the web dashboard ("Add a machine") or is generated headless via the CLI on an already-enrolled account. It binds this machine to the host's account and establishes the agent's identity (mTLS) with the [control plane](../platform/control-plane.md). No password, no inbound anything.
@@ -58,7 +60,7 @@ The enrollment token comes from the web dashboard ("Add a machine") or is genera
 Enrollment immediately runs a hardware probe. This is the part the host watches, so it streams live and finishes in **under two minutes** on a normal connection:
 
 ```
-loom-host: probing this machine…
+loom-hostd: probing this machine…
   GPU          NVIDIA GeForce RTX 4090  (24 GB VRAM, 1 device)
   Driver       565.77   ✓ (min 550)
   CUDA         12.6 runtime available
@@ -78,11 +80,11 @@ Eligibility
   Tier A (VFIO passthrough)   ⚠ AVAILABLE IF you enable IOMMU
       Tier A gives renters a dedicated GPU in a microVM (higher trust,
       higher pay). It needs IOMMU turned on in your BIOS.
-      Run:  loom-host setup-tier-a   (guided, ~10 min + one reboot)
+      Run:  loom-hostd setup-tier-a   (guided, ~10 min + one reboot)
       This is optional. You can earn on Tier B today and add Tier A later.
 ```
 
-The verdict is explicit and non-punitive. **Tier B never requires BIOS work** — that's the promise that keeps the 10-minute budget real for a daily-driver gaming rig. Tier A's extra setup (IOMMU toggle, VFIO binding, headless assumption) is surfaced as an *optional upgrade* with a guided walkthrough (`loom-host setup-tier-a` explains the BIOS steps for the host's detected motherboard vendor where we can, verifies afterward, and is fully reversible). The tier internals are in [isolation.md](../platform/isolation.md); the host never needs to read that to host.
+The verdict is explicit and non-punitive. **Tier B never requires BIOS work** — that's the promise that keeps the 10-minute budget real for a daily-driver gaming rig. Tier A's extra setup (IOMMU toggle, VFIO binding, headless assumption) is surfaced as an *optional upgrade* with a guided walkthrough (`loom-hostd setup-tier-a` explains the BIOS steps for the host's detected motherboard vendor where we can, verifies afterward, and is fully reversible). The tier internals are in [isolation.md](../platform/isolation.md); the host never needs to read that to host.
 
 ### What the probe rejects — and how to fix it
 
@@ -90,7 +92,7 @@ The probe fails closed and always pairs a rejection with a fix:
 
 | Rejection | Message the host sees | Fix-it guidance |
 |---|---|---|
-| **Driver too old** | `Driver 535.x < min 550. Renters' CUDA 12.x images won't run.` | One-liner to the vendor driver upgrade for their distro; re-probe with `loom-host probe`. |
+| **Driver too old** | `Driver 535.x < min 550. Renters' CUDA 12.x images won't run.` | One-liner to the vendor driver upgrade for their distro; re-probe with `loom-hostd probe`. |
 | **VRAM too small** | `6 GB VRAM < min 8 GB for Tier B listings.` | Not fixable on this card. We explain that sub-8GB GPUs can't host current curated images and suggest CPU-side roles are out of scope at launch. |
 | **Bandwidth floor** | `Upload 22 Mbps < min 50 Mbps. Weight/checkpoint transfer would stall jobs.` | Explain the floor exists to protect renters from slow nodes; suggest wired Ethernet; offer to re-test. Persistent low-bandwidth machines can still list but are down-ranked and capped to smaller jobs. |
 | **No supported GPU** | `No NVIDIA GPU detected. Loom hosts Linux + NVIDIA first; ROCm is a fast-follow.` | Point to the support matrix (§9) and the roadmap. |

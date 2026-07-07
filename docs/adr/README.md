@@ -18,3 +18,5 @@ This directory records the load-bearing architectural decisions behind Loom, a d
 | [0010](./0010-curated-runtime-images.md) | Curated runtime images only at v1; Nydus/EROFS lazy pull | Accepted |
 | [0011](./0011-single-node-scope.md) | Single-node scope: no WAN multi-node training or distributed data | Accepted |
 | [0012](./0012-fixed-pricing-fiat-only.md) | Fixed ask pricing + 20% take + fiat only | Accepted |
+| [0013](./0013-single-binary-self-host-control-plane.md) | Single-binary self-host control plane; SQLite/in-proc default, Postgres/NATS optional | Accepted |
+| [0014](./0014-deployment-profiles-marketplace-optional.md) | Three deployment profiles; self-hostable core, marketplace optional and deferred | Accepted |

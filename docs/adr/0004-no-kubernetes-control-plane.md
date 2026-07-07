@@ -1,6 +1,6 @@
 # 0004 — No Kubernetes; control plane = API + scheduler + Postgres + NATS
 
-**Status:** Accepted — 2026-07-07
+**Status:** Accepted — 2026-07-07 · Amended by [ADR-0013](0013-single-binary-self-host-control-plane.md): Postgres+NATS is the marketplace-scale configuration; the core control plane embeds SQLite and an in-process queue.
 
 ## Context
 
