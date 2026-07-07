@@ -190,7 +190,7 @@ Notes on the model:
 
 ```json
 {
-  "recipe": "qlora",                     // XOR with "image"
+  "recipe": "qlora-sft",                 // XOR with "image"
   "recipe_config": {
     "base": "hf:meta-llama/Llama-3.1-8B",
     "epochs": 3, "lora_r": 16
@@ -219,7 +219,7 @@ Notes on the model:
 }
 ```
 
-- `recipe` XOR `image`: `image` takes a content-addressed digest (`loom/pytorch@sha256:…` or `sha256:…`); unresolvable or non-curated → `image_unknown` ([security.md §7](./security.md#7-platform-security)). `recipe` references the read-only catalog (§3.4); unknown → `recipe_unknown`.
+- `recipe` XOR `image`: `image` takes a content-addressed digest (`loom/torch@sha256:…` or `sha256:…`); unresolvable or non-curated → `image_unknown` ([security.md §7](./security.md#7-platform-security)). `recipe` references the read-only catalog (§3.4); unknown → `recipe_unknown`.
 - **`gpu` fan-out**: a list produces a job group of N children run in parallel — the [deployment.md §3(a)](../product/deployment.md#3-renter-quickstarts--three-narratives) test-across-hardware story. A string is a single job.
 - **`trust_tier` is reserved.** It mirrors `isolation_tier` today; the field exists in the wire format from day one so Tier C attestation ([security.md §6.5](./security.md#65-hardware-sourcing-reality)) slots in without a breaking change. Requesting `"C"` today may return `no_capacity` until Tier C supply exists.
 - **`env` sealed secrets**: values are `{ "sealed_secret": "seal_…" }` handles, minted via the sealed-secret endpoint (§3.7). The plaintext never appears in a manifest, log, or heartbeat ([security.md §7](./security.md#7-platform-security), [training.md §6](../ml-lifecycle/training.md#6-hugging-face-integration)).
@@ -379,7 +379,7 @@ The **pull flow** (`loom data pull`) is the mirror image: `GET /v1/datasets/{id}
 | `GET` | `/v1/gpu-classes` | GPU classes with **live price bands** per class+tier. |
 | `GET` | `/v1/gpu-classes/{name}` | One class: VRAM, capabilities, live pricing. |
 
-Recipes are the catalog behind `loom train --recipe` ([training.md §4](../ml-lifecycle/training.md#4-job-templates--managed-recipes)): `qlora`, `lora`, `full-ft`, `dpo`, `grpo`, `diffusion-lora`, `classifier`, `embedding`. Each returns a typed config schema for client-side validation.
+Recipes are the catalog behind `loom train --recipe` ([training.md §4](../ml-lifecycle/training.md#4-job-templates--managed-recipes)): `qlora-sft`, `lora-sft`, `full-ft-small`, `dpo`, `grpo`, `diffusion-lora`, `classifier-ft`, `embeddings-ft`, `whisper-ft`. Each returns a typed config schema for client-side validation.
 
 **`GET /v1/gpu-classes`** is the renter marketplace view (the CLI's price levers, [deployment.md §6](../product/deployment.md#6-failure-ux)) — a per-class, per-tier price band, not individual nodes (nodes are host-side, [control-plane.md §7](./control-plane.md#7-api-surface-sketch)):
 
@@ -577,7 +577,7 @@ Generated from the OpenAPI spec: **`loom` (Python)** and **`@loom/sdk` (TypeScri
 from loom import Loom
 loom = Loom(api_key="loom_sk_…")
 grp = loom.jobs.create(
-    image="loom/pytorch@sha256:…",
+    image="loom/torch@sha256:…",
     gpu=["rtx4090", "rtx5090", "rx9070xt"],   # -> job group
     repo=".", command=["pytest", "tests/gpu/", "-q"],
     isolation_tier="B", max_price_per_hour=300000,
@@ -591,7 +591,7 @@ for child in grp.children:
 
 ```python
 dsv  = loom.datasets.push("./sft_data.jsonl", name="my-sft:v1")   # chunk+presigned+commit
-job  = loom.jobs.create(recipe="qlora",
+job  = loom.jobs.create(recipe="qlora-sft",
          recipe_config={"base":"hf:meta-llama/Llama-3.1-8B","epochs":3,"lora_r":16},
          data=[dsv.ref], gpu="rtx4090")
 run  = loom.eval_runs.create(suite="instruction-following",
@@ -637,5 +637,3 @@ The inference user needs no Loom SDK at all — the whole point of the OpenAI-co
 ---
 
 *Cross-references: [control-plane.md](./control-plane.md) (API-surface sketch, job lifecycle, billing) · [serving.md](../ml-lifecycle/serving.md) (gateway, OpenAI surface, failover) · [data.md](../ml-lifecycle/data.md) (manifests, push flow) · [training.md](../ml-lifecycle/training.md) (recipes, sealed secrets) · [evaluation.md](../ml-lifecycle/evaluation.md) (eval-runs, signed reports, gates) · [networking.md](./networking.md) (relay tickets, inference path) · [security.md](./security.md) (identity-stripping, sealed secrets, trust tiers) · [deployment.md](../product/deployment.md) (CLI surface, renter narratives).*
-</content>
-</invoke>

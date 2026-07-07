@@ -5,6 +5,7 @@ This is the design-phase documentation for Loom, a distributed GPU compute platf
 ## Architecture
 
 - [overview.md](architecture/overview.md) — system components, request/job flows, technology decisions at a glance
+- [design-review.md](architecture/design-review.md) — red-team self-critique: ranked findings, pre-build spikes, verdict
 
 ## Decisions
 
