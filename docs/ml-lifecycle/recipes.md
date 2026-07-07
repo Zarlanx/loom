@@ -72,7 +72,7 @@ config_schema:                                  # JSON Schema Draft 2020-12
     lr:
       type: object
       properties:
-        peak:       { type: number, default: 2.0e-4, minimum: 1e-6, maximum: 1e-2 }
+        peak:       { type: number, default: 2.0e-4, minimum: 1.0e-6, maximum: 1.0e-2 }
         schedule:   { type: string, default: cosine, enum: [cosine, linear, constant] }
         warmup_ratio: { type: number, default: 0.03, minimum: 0.0, maximum: 0.2 }
     batch:
@@ -149,6 +149,8 @@ All v1 recipes are Loom-authored (§6). GPU-class guidance follows the taxonomy 
 | `classifier-ft` | `loom/train` | single 8–16GB | classifier head | BERT-class sequence classification |
 | `diffusion-lora` | `loom/train` | single 16–24GB | diffusion LoRA | SDXL/FLUX-class LoRA (`diffusers`/PEFT) |
 | `whisper-ft` | `loom/train` | single 8–24GB | ASR model | Whisper fine-tune |
+
+**Image note (honesty over convenience).** All nine recipes pin the `loom/train` lineage ([environments.md](./environments.md) §2), whose cataloged contents are the LLM/PEFT training stack (Transformers, PEFT, TRL, Unsloth, bitsandbytes, Liger, DeepSpeed). The four non-LLM recipes — `embeddings-ft` (sentence-transformers), `classifier-ft` (BERT-class, covered by Transformers), `diffusion-lora` (`diffusers`), and `whisper-ft` (Whisper via Transformers) — require libraries not all of which appear in that catalog manifest today; `diffusion-lora` and `embeddings-ft` in particular need `diffusers` / `sentence-transformers` added to the `train` image or shipped as a `train`-derived variant. This is an [environments.md](./environments.md) catalog gap to close before these recipes publish, not a claim that today's `loom/train` already bundles every dependency.
 
 **`qlora-sft` — the flagship.** QLoRA is why Loom exists as a training platform ([training.md](./training.md) §1a): 4-bit NF4 base weights + LoRA adapters match 16-bit quality while collapsing VRAM onto a single consumer card. It produces a small adapter (tens to low-hundreds of MB), which is the happy path for interruption tolerance (checkpoints upload in seconds over residential uplink, [training.md](./training.md) §3) *and* the cheapest deploy path ([serving.md](./serving.md) adapters-on-shared-base). Choose it for the overwhelming majority of instruction-tuning / domain-adaptation jobs on 1B–34B models. This is the default a new fine-tuner should reach for.
 
@@ -290,11 +292,11 @@ $ loom train --recipe qlora-sft@3 \
 # 4. Deploy the adapter on a shared base — cheapest dedicated endpoint (serving.md).
 $ loom deploy adapter:a17e9f --name my-model
   adapter placed on base-model replicas (llama-3.1-8b) · scale-to-zero
-  → https://api.loom.dev/v1   (model = "my-model")
+  → https://inference.loom.dev/v1   (model = "my-model")
 
 # 5. First call — one line different from OpenAI.
-$ curl https://api.loom.dev/v1/chat/completions \
-    -H "Authorization: Bearer $LOOM_API_KEY" \
+$ curl https://inference.loom.dev/v1/chat/completions \
+    -H "Authorization: Bearer loom_sk_..." \
     -d '{"model":"my-model","messages":[{"role":"user","content":"hi"}]}'
   {"choices":[{"message":{"role":"assistant","content":"Hello! …"}}], …}
 ```

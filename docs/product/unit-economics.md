@@ -90,7 +90,7 @@ contribution   = 0.0700 − 0.01225 − 0.00040 − 0.00010 − 0.05000
 
 Two sensitivities worth internalizing now:
 
-- If `support` is really $1/account-month (better tooling, self-serve disputes), support_amort drops to $0.0167 and contribution triples to ~$0.024/hr.
+- If `support` is really $1/account-month (better tooling, self-serve disputes), support_amort drops to $0.0167 and contribution jumps ~5.6× to ~$0.041/hr.
 - On a **higher-ask card the clip scales linearly** because gross_take is 20% of a bigger number while support/fees are near-fixed. This is why H100-class rescues the blended margin.
 
 ### Contribution across classes and scenarios
@@ -99,19 +99,19 @@ Per **rented** GPU-hour (i.e. before applying utilization), R2 storage, base rel
 
 | GPU class | Ask `A` | gross_take (0.20A) | Stripe | relay+store | support | **contribution/rented-hr** |
 |---|---|---|---|---|---|---|
-| 3090 | $0.22 | $0.0440 | $0.0085 | $0.0005 | $0.0500 | **−$0.0150** |
-| 4090 | $0.35 | $0.0700 | $0.0123 | $0.0005 | $0.0500 | **+$0.0073** |
-| 5090 | $0.45 | $0.0900 | $0.0151 | $0.0005 | $0.0500 | **+$0.0244** |
-| H100 | $1.90 | $0.3800 | $0.0571 | $0.0005 | $0.0500 | **+$0.2724** |
+| 3090 | $0.22 | $0.0440 | $0.0077 | $0.0005 | $0.0500 | **−$0.0142** |
+| 4090 | $0.35 | $0.0700 | $0.0123 | $0.0005 | $0.0500 | **+$0.0072** |
+| 5090 | $0.45 | $0.0900 | $0.0158 | $0.0005 | $0.0500 | **+$0.0237** |
+| H100 | $1.90 | $0.3800 | $0.0665 | $0.0005 | $0.0500 | **+$0.2630** |
 
 **The 3090 line is negative** — at a $0.22 ask, 20% take doesn't cover a $0.05/hr support load. Read plainly: *the fixed-ish support cost per active account is the real floor, and the cheapest cards can't clear it on rental alone.* Mitigations are (a) drive support cost down, (b) let inference (§3) carry those low-ask nodes, (c) don't over-recruit 3090s as pure rental supply. Now sweep utilization to see monthly contribution per **listed** GPU (contribution/hr × 730 hr × u):
 
 | GPU class | contribution/rented-hr | pess (20%) | base (40%) | good (60%) |
 |---|---|---|---|---|
-| 3090 | −$0.0150 | −$2.19/mo | −$4.38/mo | −$6.57/mo |
-| 4090 | +$0.0073 | +$1.07/mo | +$2.13/mo | +$3.20/mo |
-| 5090 | +$0.0244 | +$3.56/mo | +$7.13/mo | +$10.69/mo |
-| H100 | +$0.2724 | +$39.8/mo | +$79.6/mo | +$119.3/mo |
+| 3090 | −$0.0142 | −$2.07/mo | −$4.15/mo | −$6.22/mo |
+| 4090 | +$0.0072 | +$1.06/mo | +$2.12/mo | +$3.17/mo |
+| 5090 | +$0.0237 | +$3.47/mo | +$6.93/mo | +$10.40/mo |
+| H100 | +$0.2630 | +$38.4/mo | +$76.8/mo | +$115.2/mo |
 
 The blended contribution of a seed fleet is carried almost entirely by 5090/H100-class supply. A 4090-heavy fleet is roughly break-even on rental and needs inference to be the business.
 
@@ -151,13 +151,13 @@ cost_per_1M  =                          = $0.065 per 1M output tokens
 
 This reproduces the $0.065/1M cost figure in [marketplace.md §2](./marketplace.md). Now the margin, against that doc's **$0.15–0.30 per 1M** list band:
 
-| Model class | cost/1M (at cost) | list/1M ([marketplace.md](./marketplace.md)) | gross margin | after 20% host-payout on cost |
-|---|---|---|---|---|
-| 7–8B | $0.065 | $0.15 – $0.30 | 57% – 78% | still 45%–70%+ |
-| 14B | $0.135 | ~$0.30 – $0.50 (scales with size) | ~55%–73% | — |
-| 32B/MoE | $0.324 | ~$0.60 – $1.00 | ~46%–68% | — |
+| Model class | cost/1M (at cost) | list/1M ([marketplace.md](./marketplace.md)) | gross margin |
+|---|---|---|---|
+| 7–8B | $0.065 | $0.15 – $0.30 | 57% – 78% |
+| 14B | $0.135 | ~$0.30 – $0.50 (scales with size) | ~55%–73% |
+| 32B/MoE | $0.324 | ~$0.60 – $1.00 | ~46%–68% |
 
-Even after the host keeps their 80% of the *underlying GPU-time cost*, list-vs-cost leaves a **healthy gross margin** — because per-token pricing lets us clip both the take *and* the utilization arbitrage (renters pay for tokens; we pay for reserved GPU-seconds and pocket the difference when concurrency is high). **This is the margin engine.** Note the relay term is negligible for inference: token streams are "a few KB/s" ([networking.md §4](../platform/networking.md)), so relay egress on inference is effectively free even at 100% relay_share.
+The `cost/1M` basis already contains the host's payout — it is built from the full per-second GPU price — so the margin column is genuinely gross margin, not margin-before-payout. List-vs-cost leaves a **healthy gross margin** — because per-token pricing lets us clip both the take *and* the utilization arbitrage (renters pay for tokens; we pay for reserved GPU-seconds and pocket the difference when concurrency is high). **This is the margin engine.** Note the relay term is negligible for inference: token streams are "a few KB/s" ([networking.md §4](../platform/networking.md)), so relay egress on inference is effectively free even at 100% relay_share.
 
 ### Keep-warm and the idle-burn question
 
@@ -224,7 +224,7 @@ Checkpoints + weight-cache origin seed. **R2's zero egress is materially better*
 | | Storage /GB-mo | Egress /GB | 20TB stored + 30TB egress/mo |
 |---|---|---|---|
 | **R2** | $0.015 | **$0** | $300 + $0 = **$300/mo** |
-| **S3** | $0.023 | $0.09 (first 10TB) | $460 + ~$2,550 = **~$3,010/mo** |
+| **S3** | $0.023 | $0.09 (first 10TB) | $460 + ~$2,700 = **~$3,160/mo** |
 
 The egress line is a **10×+ swing**. Because the weight-cache origin is a fallback seed that many nodes pull from ([serving.md §4](../ml-lifecycle/serving.md)), egress volume is real and unpredictable — **R2 is the default; S3 would put a four-figure egress bill on a marketplace clipping cents per GPU-hour.** This is a decision, not a preference.
 
@@ -262,12 +262,12 @@ At base `u = 40%`, using the §2 monthly-per-listed-GPU contributions:
 
 | Fleet mix | contribution/GPU/mo (base) | GPUs to cover $660 |
 |---|---|---|
-| all-4090 | $2.13 | **310 GPUs** |
-| all-5090 | $7.13 | **93 GPUs** |
-| all-H100 | $79.6 | **9 GPUs** |
+| all-4090 | $2.12 | **312 GPUs** |
+| all-5090 | $6.93 | **95 GPUs** |
+| all-H100 | $76.8 | **9 GPUs** |
 | blended seed (mostly 4090/5090, few H100) | ~$8/GPU | **~83 GPUs** |
 
-The seed fleet is 50–100 GPUs ([marketplace.md §6](./marketplace.md)). So **a blended seed fleet at 40% util roughly covers Phase-1 infra burn on batch rental alone — but only if it isn't 4090/3090-heavy.** An all-4090 fleet would need 310 GPUs to cover burn on rental alone, which is why inference is not optional.
+The seed fleet is 50–100 GPUs ([marketplace.md §6](./marketplace.md)). So **a blended seed fleet at 40% util roughly covers Phase-1 infra burn on batch rental alone — but only if it isn't 4090/3090-heavy.** An all-4090 fleet would need 312 GPUs to cover burn on rental alone, which is why inference is not optional.
 
 **With inference carrying its share.** A single 8B replica at 40% billable serving ~2,500 tok/s aggregate, at a $0.10/1M *margin* (list $0.15 − cost $0.065, conservative), earns:
 
@@ -284,9 +284,9 @@ Batch-rental contribution/rented-hr for a **4090**, varying the levers (base cel
 
 | | take 15% | take 20% | take 25% |
 |---|---|---|---|
-| **util 20% (pess)** | −$0.0004 | +$0.0073 | +$0.0141 |
-| **util 40% (base)** | −$0.0004 | **+$0.0073** | +$0.0141 |
-| **util 60% (good)** | −$0.0004 | +$0.0073 | +$0.0141 |
+| **util 20% (pess)** | −$0.0103 | +$0.0072 | +$0.0247 |
+| **util 40% (base)** | −$0.0103 | **+$0.0072** | +$0.0247 |
+| **util 60% (good)** | −$0.0103 | +$0.0072 | +$0.0247 |
 
 (Contribution/*rented-hr* is util-independent; util scales the *monthly* total in §2. Take-rate moves it linearly: at 15% the 4090 goes negative, at 25% it's healthy — a live argument for the [marketplace.md §2](./marketplace.md) "nudge to 22–25% on premium capacity" revisit trigger.)
 
@@ -300,8 +300,8 @@ Relay-share sensitivity (4090, base): relay cost swings from $0.0002/hr (10%) to
 
 ```
 gross_take   = 0.20 × 0.15 = $0.030
-minus stripe $0.0075 + relay/store $0.0006 + support $0.05
-contribution = 0.030 − 0.058 = −$0.028 /rented-hr   ← negative
+minus stripe $0.0053 + relay/store $0.0005 + support $0.05
+contribution = 0.030 − 0.0558 = −$0.026 /rented-hr   ← negative
 ```
 
 At Salad-floor pricing the batch clip **goes underwater** — the 20% take on $0.15 can't cover per-account support. **This confirms the [roadmap.md](./roadmap.md) risk-5 stance: we do not follow the floor.** The defense is not matching price; it's that our margin lives in inference (§3, unaffected by raw-hour price wars — a $0.15 GPU-hr makes inference *cheaper to source*, widening token margin) and lifecycle value. A pure raw-compute price war *improves* our inference cost base while it destroys the batch clip — so we lean into inference and let batch ride at break-even.
@@ -340,7 +340,7 @@ Design principle: every GUESS in §1 should have a metric that replaces it by Ph
 - **Keep-warm host payout (§3).** Does the host earn during warm-idle seconds? Recommendation Branch A (yes); needs a decision in [marketplace.md §2/§7](./marketplace.md), and it sets the minimum keep-warm price floor.
 - **Support cost per account.** The $3/account-month GUESS dominates batch contribution and flips the 3090 (and price-war 4090) negative. What is it really? Blocks any confident statement about batch-tier profitability.
 - **3090-class supply.** At a sub-$0.25 ask, 3090 rental is contribution-negative under our support assumption. Do we recruit them anyway (for inference-only supply), price them higher, or decline them? Interacts with the liquidity seed-fleet mix ([marketplace.md §6](./marketplace.md)).
-- **Blended fleet mix target.** §5 shows break-even is entirely mix-dependent (9 H100s vs 310 4090s for the same burn). What GPU-class mix are we actually recruiting, and does the seed fleet clear infra burn on batch alone or must inference carry it from Phase 1?
+- **Blended fleet mix target.** §5 shows break-even is entirely mix-dependent (9 H100s vs 312 4090s for the same burn). What GPU-class mix are we actually recruiting, and does the seed fleet clear infra burn on batch alone or must inference carry it from Phase 1?
 - **Relay free-tier sizing** (mirrors [marketplace.md §7](./marketplace.md)) — the per-job GB allowance that keeps honest jobs out of the surcharge while catching exfil. The model can't price relay contribution until this is set.
 - **Batch-tier floor price.** How far below shared-endpoint per-token pricing can batch go before it's not worth the metering overhead, given it's pure idle-fill upside?
 - **When does take-rate move?** §5 sensitivity shows 15% is underwater on 4090s and 25% is healthy. The [marketplace.md §2](./marketplace.md) "nudge to 22–25% on premium capacity" trigger needs a concrete utilization/supply threshold tied to these numbers.
