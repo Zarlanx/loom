@@ -117,11 +117,11 @@ The renter installs the CLI (`brew install loom` / `curl` installer / `pip insta
 
 ### (a) The "test across consumer hardware" engineer
 
-An ML engineer maintains a Triton kernel / a PyTorch extension / an inference tool. Before a release they need to know it works across the messy reality of *consumer* GPUs — not the A100/H100 monoculture a hyperscaler rents. This is a genuine differentiator: **Loom's supply is exactly the long tail of consumer hardware that's otherwise impossible to test on in CI.** You cannot rent an RX 9700 or an RTX 5090 from a hyperscaler; on Loom they're the median node.
+An ML engineer maintains a Triton kernel / a PyTorch extension / an inference tool. Before a release they need to know it works across the messy reality of *consumer* GPUs — not the A100/H100 monoculture a hyperscaler rents. This is a genuine differentiator: **Loom's supply is exactly the long tail of consumer hardware that's otherwise impossible to test on in CI.** You cannot rent an RX 9070 XT or an RTX 5090 from a hyperscaler; on Loom they're the median node.
 
 ```
 loom run \
-  --gpu rtx4090,rtx5090,rx9700 \
+  --gpu rtx4090,rtx5090,rx9070xt \
   --image loom/pytorch:2.7-cu126 \
   --repo . \
   -- pytest tests/gpu/ -q
@@ -132,11 +132,11 @@ This fans one command out to three GPU models in parallel, syncs the working tre
 ```
 ✓ rtx4090   42 passed in 71s     $0.011
 ✓ rtx5090   42 passed in 58s     $0.014
-✗ rx9700     2 failed in 63s     $0.008   (fp8 path — see log)
+✗ rx9070xt   2 failed in 63s     $0.008   (fp8 path — see log)
 Total: $0.033
 ```
 
-The `rx9700` failure is the entire point — you found a ROCm fp8 divergence before your users did, for three cents. This story is why the [GitHub Action](#7-ecosystem-integrations) matters so much (§7): the same command drops straight into CI.
+The `rx9070xt` failure is the entire point — you found a ROCm fp8 divergence before your users did, for three cents. This story is why the [GitHub Action](#7-ecosystem-integrations) matters so much (§7): the same command drops straight into CI.
 
 ### (b) The fine-tune → eval → deploy loop
 
@@ -269,9 +269,9 @@ Automatic checkpoint/resume (spec'd in [training.md](../ml-lifecycle/training.md
 **No capacity matches the request.** Instead of a hard error, the renter gets a queue position and an actionable price lever:
 
 ```
-No rx9700 available at ≤ $0.30/GPU-hr right now.
+No rx9070xt available at ≤ $0.30/GPU-hr right now.
   Queue position: 3   (est. wait 4 min at current price)
-  Or raise your bid to $0.38/GPU-hr for immediate placement:  --max-price 0.38
+  Or raise your max to $0.38/GPU-hr to match a listed node now:  --max-price 0.38
   Or run now on rtx4090 (available):  --gpu rtx4090
 ```
 
@@ -311,11 +311,11 @@ Adoption comes from meeting developers where they already are. Priority order:
   ```yaml
   - uses: loom-labs/run-action@v1
     with:
-      gpu: rtx4090,rtx5090,rx9700
+      gpu: rtx4090,rtx5090,rx9070xt
       run: pytest tests/gpu/
   ```
 
-  This is a genuine complement to, not a clone of, existing self-hosted GPU-runner setups: teams today either wire up their own self-hosted runners or pay for GPU-runner services like RunsOn (which rents cloud NVIDIA/AMD instances such as T4/A10G/L4/L40S/A100/H100 as Actions runners).[^ghgpu] Those give you *datacenter* GPUs; Loom gives you the *consumer* long tail (RTX 5090, RX 9700) that CI genuinely cannot get elsewhere, billed per-second, with no runner to maintain.
+  This is a genuine complement to, not a clone of, existing GPU-runner options: GitHub's own first-party GPU runners are a single datacenter tier (a Tesla T4 larger-runner, org/enterprise plans), and beyond that teams either wire up their own self-hosted runners or pay for services like RunsOn (which rents cloud NVIDIA/AMD instances such as T4/A10G/L4/L40S/A100/H100 as Actions runners).[^ghgpu] All of those give you *datacenter* GPUs; Loom gives you the *consumer* long tail (RTX 5090, RX 9070 XT) that CI genuinely cannot get elsewhere, billed per-second, with no runner to maintain.
 - **VS Code remote into interactive sessions.** Feasible and honestly bounded. VS Code Remote-SSH needs an SSH endpoint; `loom ssh` is a relay-brokered stream, not a listening `sshd` on a public host. The realistic path is a thin local SSH `ProxyCommand` that shells out to `loom ssh <job>` as the transport, letting VS Code attach over the relay tunnel. This is plausible but unproven at design time — Remote-SSH is fussy about its transport, and the server-side VS Code component must install into the sandbox image. **Flagged: needs a spike; we ship `loom notebook`/`loom port-forward` first and treat VS Code Remote as best-effort v1.1.**
 
 ---
@@ -362,4 +362,4 @@ Copy-paste is the fastest teacher. **Every recipe ships with a runnable quicksta
 
 [^litellm]: LiteLLM routes to any OpenAI-compatible endpoint via its OpenAI-compatible provider path, and documents adding a provider by editing a single provider registration file. See LiteLLM docs — [Providers](https://docs.litellm.ai/docs/providers), [OpenRouter](https://docs.litellm.ai/docs/providers/openrouter), and [Integrate as a Model Provider](https://docs.litellm.ai/docs/provider_registration/). OpenRouter is described as a proxy over 400+ models / 60+ providers ([TrueFoundry comparison](https://www.truefoundry.com/blog/litellm-vs-openrouter)); its self-serve provider-listing criteria are not publicly documented (unverified).
 
-[^ghgpu]: GitHub Actions has no first-party GPU-hosted runners; GPU CI requires self-hosted runners or third-party runner services. RunsOn documents GPU runner instances spanning NVIDIA (T4, A10G, L4, L40S, V100, A100, H100, H200) and AMD (Radeon Pro V520): [RunsOn GPU runners](https://runs-on.com/runners/gpu/). General self-hosted GPU runner guidance: [devactivity](https://devactivity.com/insights/testing-gpu-code-on-github-actions-overcoming-performance-hurdles-with-self-hosted-runners/), [GitHub Docs](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/use-in-a-workflow). All such services offer *datacenter* GPUs, not the consumer long tail.
+[^ghgpu]: GitHub's only first-party GPU-hosted runner is a single datacenter tier — a Tesla T4 "larger runner" (`gpu-t4-4-core`), GA since 2024-07-08 and available on larger-runner/organization plans ([GitHub changelog](https://github.blog/changelog/2024-07-08-github-actions-gpu-hosted-runners-are-now-generally-available/), [larger-runners reference](https://docs.github.com/en/actions/reference/runners/larger-runners)). For anything beyond a T4, GPU CI requires self-hosted runners or third-party runner services. RunsOn documents GPU runner instances spanning NVIDIA (T4, A10G, L4, L40S, V100, A100, H100, H200) and AMD (Radeon Pro V520): [RunsOn GPU runners](https://runs-on.com/runners/gpu/). General self-hosted GPU runner guidance: [devactivity](https://devactivity.com/insights/testing-gpu-code-on-github-actions-overcoming-performance-hurdles-with-self-hosted-runners/), [GitHub Docs](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/use-in-a-workflow). All such options offer *datacenter* GPUs, not the consumer long tail.

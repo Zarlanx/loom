@@ -11,8 +11,8 @@ The consumer-GPU rental market in mid-2026 is crowded and cheap. Representative 
 | Provider | RTX 4090 | RTX 5090 | H100 | Model |
 |---|---|---|---|---|
 | Vast.ai | ~$0.29–0.50/hr | ~$0.27–0.99/hr | ~$1.60–2.50/hr | Open marketplace, host-set |
-| RunPod Community | ~$0.34–0.69/hr | — | ~$2.89/hr (Secure) | Vetted community pool |
-| SaladCloud | ~$0.20/hr (batch) | ~$0.27–0.29/hr (batch) | n/a (consumer-only) | Interruptible batch |
+| RunPod Community | ~$0.34–0.69/hr | ~$0.99/hr | ~$2.89/hr (Secure) | Vetted community pool |
+| SaladCloud | ~$0.20/hr (batch) | ~$0.27–0.30/hr (batch) | n/a (consumer-only) | Interruptible batch |
 | io.net / market median | ~$0.17–0.55/hr | — | ~$1.03 (spot)–2.69/hr | Aggregated/DePIN |
 
 Sources: [Vast.ai pricing](https://vast.ai/pricing) and [RTX 4090 page](https://vast.ai/pricing/gpu/RTX-4090); [RunPod pricing](https://www.runpod.io/pricing); [SaladCloud pricing](https://salad.com/pricing) and [RTX 5090 launch post](https://blog.salad.com/rtx5090/); cross-market indices [getdeploying RTX 4090](https://getdeploying.com/gpus/nvidia-rtx-4090) / [RTX 5090](https://getdeploying.com/gpus/nvidia-rtx-5090) and [Spheron H100 comparison](https://www.spheron.network/blog/gpu-cloud-pricing-comparison-2026/). All retrieved 2026-07-07; treat as ranges, not quotes — live rates move daily.
