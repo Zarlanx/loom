@@ -39,7 +39,7 @@ sequenceDiagram
     participant Sched as Scheduler
     participant NATS
     participant Agent as Host Agent
-    participant Sandbox as Sandbox (Tier A/B)
+    participant Sandbox as "Sandbox (Tier A/B)"
     participant Obj as Object Store
 
     Renter->>CLI: loom job submit (image, resources, tier, max price)
@@ -74,8 +74,8 @@ sequenceDiagram
     actor App as Renter App
     participant GW as Inference Gateway
     participant Reg as Node Registry
-    participant NodeA as Node A (vLLM)
-    participant NodeB as Node B (vLLM)
+    participant NodeA as "Node A (vLLM)"
+    participant NodeB as "Node B (vLLM)"
 
     App->>GW: POST /v1/chat/completions (stream=true, API key)
     GW->>GW: authenticate, meter, STRIP identity
@@ -105,7 +105,7 @@ Then Node A dies — someone opened a game, the machine slept, the residential l
 | Tier B isolation | Container (`nvidia-container-toolkit`) + gVisor `runsc`/`nvproxy` | Plain Docker; VM-per-container | On a daily-driver we can't monopolize the card; a hardened container is the honest ceiling and we label it as such |
 | Control plane | Postgres + NATS + custom scheduler | Kubernetes; Nomad; Ray | Hosts are single machines behind NAT, not a cluster we administer — K8s assumes a fleet you own and can reach inbound; we need a coordinator for cattle nodes, not an orchestrator (see below) |
 | Host agent | Single static Rust binary, outbound-only | Python daemon; sidecar container | Trivial install, tiny footprint, no inbound ports, no runtime deps on a stranger's machine |
-| Inference engine | vLLM | SGLang; TGI; raw PyTorch | [Industry-standard OpenAI-compatible server](https://www.glukhov.org/llm-hosting/vllm/vllm-quickstart/) with PagedAttention + continuous batching; SGLang/TGI remain candidates for specific model families |
+| Inference engine | vLLM | SGLang; TGI; raw PyTorch | Widely-adopted [OpenAI-compatible server](https://docs.vllm.ai/en/latest/serving/online_serving/) with [PagedAttention + continuous batching](https://docs.vllm.ai/); SGLang/TGI remain candidates for specific model families |
 | Networking | DERP-style relay + WireGuard direct upgrade | Public IP + inbound ports; pure relay | Matches [Tailscale's proven start-relayed-then-upgrade model](https://tailscale.com/docs/reference/connection-types); no host ever exposes a port |
 | Weight distribution | Content-addressed + P2P chunk fetch | Central object store fetch per node | Residential upload is scarce; P2P amortizes distribution and enables pre-placement |
 | Serving topology | Whole-model-per-node | Dynamo-style disaggregation | Disaggregation over residential links multiplies failure surface; every warm node should be a complete failover target |
