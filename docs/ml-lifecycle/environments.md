@@ -46,16 +46,16 @@ Images form a **layer graph**: each builds `FROM` the one above it, so the expen
 **Calendar-versioned, matrix-encoded tags.** Every mutable capability that affects compatibility is in the tag:
 
 ```
-loom/train:2026.07-cu126-torch2.7        # NVIDIA, CUDA 12.6, PyTorch 2.7
-loom/serve-vllm:2026.07-cu128-torch2.8   # a newer CUDA/torch line, same month
-loom/torch:2026.07-rocm7.2-torch2.7      # ROCm mirror
+loom/train:2026.07-cu126-torch2.12       # NVIDIA, CUDA 12.6, PyTorch 2.12
+loom/serve-vllm:2026.07-cu128-torch2.12  # a newer CUDA line, same month
+loom/torch:2026.07-rocm7.2-torch2.12     # ROCm mirror
 ```
 
 - `2026.07` — the **catalog release**, cut monthly. Groups a coherent, co-tested set of all images.
 - `cu126` / `rocm7.2` — the CUDA/ROCm toolkit line (drives the **driver floor**, §3).
-- `torch2.7` — the framework line, because a torch ABI bump ripples through FlashAttention, xformers, vLLM.
+- `torch2.12` — the framework line, because a torch ABI bump ripples through FlashAttention, xformers, vLLM.
 
-**Tags are immutable.** Once `loom/train:2026.07-cu126-torch2.7` is published it is never rebuilt in place. A security patch mints a new tag (`2026.07.1-…`), never mutates the old one.
+**Tags are immutable.** Once `loom/train:2026.07-cu126-torch2.12` is published it is never rebuilt in place. A security patch mints a new tag (`2026.07.1-…`), never mutates the old one.
 
 **Placement pins by digest, not tag.** The control plane records the `sha256:` digest of the exact image a job ran on. Tags are for humans; **digests are the contract** (this is what reproducibility, §9, and content-addressed distribution, §6, both key on). A `loom env freeze` (§8) captures the digest.
 
@@ -143,7 +143,7 @@ We want AMD in the fleet — but honestly, not blindly. The 2026 situation:
 
 **Security: scan + SBOM.** Every built image is vulnerability-scanned (Trivy/Grype) and ships a signed **SBOM** (SPDX/CycloneDX). Scanning gates publish; a critical CVE blocks the tag until patched (and mints a `.N` patch tag, §2.2). Images are **signed** (cosign) and the agent verifies signatures before running — a curated catalog is only as trustworthy as its provenance.
 
-**Registry + content-addressed distribution.** Images live in a registry on **operator infra**. Distribution to nodes reuses the **P2P content-addressed chunk store** already specified for weights in [../platform/networking.md](../platform/networking.md) §5 — we do **not** build a second distribution path. Networking already settled on **Dragonfly (CNCF-graduated)** for P2P image/model distribution; its native image format is **Nydus**, a content-addressable RAFS format that layers directly onto Dragonfly's P2P fabric [[Dragonfly](https://d7y.io/); [Nydus (Dragonfly image service)](https://github.com/dragonflyoss/dragonfly)]. So our images are **built as Nydus images**, shared node-to-node over the WG mesh exactly like weights, and origin traffic collapses when many nodes want the same popular base layer.
+**Registry + content-addressed distribution.** Images live in a registry on **operator infra**. Distribution to nodes reuses the **P2P content-addressed chunk store** already specified for weights in [../platform/networking.md](../platform/networking.md) §5 — we do **not** build a second distribution path. Networking already settled on **Dragonfly (CNCF-graduated)** for P2P image/model distribution; its native image format is **Nydus**, a content-addressable RAFS format that layers directly onto Dragonfly's P2P fabric [[Dragonfly](https://d7y.io/); [Nydus (Dragonfly image service)](https://github.com/dragonflyoss/nydus)]. So our images are **built as Nydus images**, shared node-to-node over the WG mesh exactly like weights, and origin traffic collapses when many nodes want the same popular base layer.
 
 **Lazy pulling — decision: Nydus (RAFS + EROFS).** Multi-GB CUDA images make lazy pulling worth it: start the container while the image streams, fetching layer contents on first access instead of pulling the whole tarball up front. Of the 2026 options — eStargz (OCI-compatible, simplest), SOCI (AWS, external zTOC index), Nydus (purpose-built RAFS) — **we pick Nydus**, for one decisive reason beyond raw speed: **Nydus's EROFS backend eliminates FUSE from the read path** (kernel VFS → EROFS driver → page cache) [[lazy-pull deep dive](https://blog.zmalik.dev/p/lazy-pulling-container-images-a-deep)], and **EROFS is exactly the read-only rootfs format we want for Tier A microVMs (§7)** — so one format serves both container lazy-pull *and* VM rootfs. Nydus is also already the Dragonfly-native format, so it's zero extra infrastructure. Datadog-scale reports of 5-minute pulls dropping to seconds validate the approach for AI images [[Dragonfly v2.4/Nydus](https://www.cncf.io/blog/2026/02/05/dragonfly-v2-4-0-is-released/)]. *(Flag: lazy-pull's win shrinks when a job touches most of the image anyway — big training images that import half the world — so we measure per-image benefit and don't over-promise; lazy pull helps cold-start latency, not total bytes for full-image jobs.)*
 

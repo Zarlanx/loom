@@ -17,7 +17,7 @@ LoRA and QLoRA are why Loom exists as a training platform. QLoRA (4-bit NF4 base
 - **7B**: comfortable (~12GB working set)
 - **13B**: comfortable (~20GB)
 - **34B**: fits with care (careful batch/seq settings, gradient checkpointing mandatory)
-- **70B**: **does not fit** — QLoRA 70B needs ~88GB, more than a 2×4090 (48GB) rig. On Loom, 70B PEFT is only schedulable on the rare multi-GPU host with enough aggregate VRAM, and even then it is slow. We surface this honestly at recipe selection, not after you've paid for GPU-hours.
+- **70B**: **does not fit a single consumer card** — QLoRA 70B needs roughly ~50GB (4-bit base ~35GB plus adapter gradients, optimizer state, and activations), so it clears neither a 24GB nor a 32GB part, and it sits right at the edge of a 2×4090 (48GB) rig — too tight to rely on. On Loom, 70B PEFT is only schedulable on the rare multi-GPU host with enough aggregate VRAM, and even then it is slow. We surface this honestly at recipe selection, not after you've paid for GPU-hours.
 
 ### (b) Full fine-tuning of small models (<8B) on multi-GPU rigs
 
@@ -45,7 +45,7 @@ Preference optimization (DPO) and reasoning-style RL (GRPO) run on top of PEFT a
 | 1–7B | QLoRA / LoRA | ~12GB | Single 3090/4090 (24GB) |
 | 13B | QLoRA | ~20GB | Single 4090/5090 (24–32GB) |
 | 34B | QLoRA | ~24GB (tight) | Single 24GB, grad-ckpt on |
-| 70B | QLoRA | ~88GB | Multi-GPU rig only; discouraged |
+| 70B | QLoRA | ~50GB | Multi-GPU rig only; discouraged |
 | <8B | Full FT (FSDP2/ZeRO) | 2–4× GPU aggregate | 2–4 GPU host |
 | <1B (from scratch) | Full training | 4–16GB | Any single GPU |
 | Diffusion LoRA / classifier / embedding | LoRA / full | 8–24GB | Single GPU |
@@ -59,7 +59,7 @@ VRAM figures are order-of-magnitude planning numbers, not guarantees — actuals
 
 Every tool below ships pre-installed and version-pinned in our curated training images ([environments.md](../ml-lifecycle/environments.md)). We pin because a fine-tune that worked last week must work this week.
 
-**PyTorch 2.x.** The foundation. PyTorch 2.10 shipped January 2026 and the 2.11 line is the current latest; `torch.compile` is mature and gives real throughput wins on our workloads.[^pytorch] Loom images pin a known-good 2.x and enable `torch.compile` by default in managed recipes (with a per-recipe escape to disable it when it fights a custom model).
+**PyTorch 2.x.** The foundation. PyTorch 2.10 shipped January 2026, 2.11 in March, and 2.12 (June 2026) is the current latest; `torch.compile` is mature and gives real throughput wins on our workloads.[^pytorch] Loom images pin a known-good 2.x and enable `torch.compile` by default in managed recipes (with a per-recipe escape to disable it when it fights a custom model).
 
 **FSDP2** (Fully Sharded Data Parallel v2). This is our default for single-host multi-GPU sharding. FSDP2 represents parameters as DTensors (vs FSDP1's flat-parameter approach), giving deterministic memory release, lower per-GPU memory, and clean `torch.compile` composability. FSDP1 is deprecated in recent PyTorch.[^fsdp2] For full FT of small models on a 2–4 GPU rig, FSDP2 is what Loom recommends and wires up for you.
 
@@ -119,7 +119,7 @@ The UX target:
 
 ```
 loom train --recipe qlora \
-  --model meta-llama/Llama-3.3-8B \
+  --model meta-llama/Llama-3.1-8B \
   --data mydata@v2
 ```
 
@@ -134,7 +134,7 @@ A **recipe** bundles four things:
 
 **Recipe families at launch:** `qlora`, `lora`, `full-ft` (multi-GPU-node-gated), `dpo`, `grpo`, `diffusion-lora`, `classifier`, `embedding`.
 
-**Escape hatch.** `loom train --script train.py --image base-cuda` runs an arbitrary script on the base image. You get `loom-ckpt`, the data cache, and HF integration; you give up the pre-tuned defaults and the upfront estimate. This is how Axolotl/LLaMA-Factory power users and researchers run whatever they want.
+**Escape hatch.** `loom train --script train.py --image loom/base-cuda` runs an arbitrary script on the base image. You get `loom-ckpt`, the data cache, and HF integration; you give up the pre-tuned defaults and the upfront estimate. This is how Axolotl/LLaMA-Factory power users and researchers run whatever they want.
 
 ---
 
@@ -157,7 +157,7 @@ Fine-tuning is a round trip to the Hub, and Loom makes both directions clean.
 
 **Auth (sealed secrets).** A user's HF token is stored as a **sealed secret** — encrypted, injected into the job's environment at runtime, never written to disk in plaintext, never logged, never visible to the node owner. (This mirrors the platform's broader secret-handling model; the node running your job is untrusted.) **Flag:** the exact sealing/attestation mechanism is a platform-security detail to be specified alongside [host-agent.md](../platform/host-agent.md).
 
-**Pull via node cache.** Base models are fetched through the data layer's node-local prefetch cache ([data.md](../ml-lifecycle/data.md)), so a popular base (say Llama-3.3-8B) is cached near the node and doesn't re-download over residential bandwidth for every job.
+**Pull via node cache.** Base models are fetched through the data layer's node-local prefetch cache ([data.md](../ml-lifecycle/data.md)), so a popular base (say Llama-3.1-8B) is cached near the node and doesn't re-download over residential bandwidth for every job.
 
 **Push adapters/merged models as job output.** On success, the job can push LoRA adapters, or a merged full model, to the HF Hub as its output artifact.
 
@@ -220,11 +220,11 @@ The cells deliberately say "depends" instead of "3.2 hours." **We would rather s
 
 [^qlora]: QLoRA uses 4-bit NF4 quantization of base weights plus LoRA adapters; NF4 + double-quantization matches 16-bit LoRA/full-FT quality on academic benchmarks. QLoRA: Efficient Finetuning of Quantized LLMs (arXiv:2305.14314); HF bitsandbytes 4-bit blog. https://arxiv.org/pdf/2305.14314 , https://huggingface.co/blog/4bit-transformers-bitsandbytes
 
-[^vram]: Per-model QLoRA VRAM and 24GB fit (7B/13B comfortable, 34B with care, 70B ~88GB and does not fit 2×4090). Spheron "GPU VRAM Requirements to Fine-Tune LLMs in 2026"; jarvislabs GPU-for-fine-tuning FAQ. https://www.spheron.network/blog/gpu-vram-requirements-fine-tune-llm-2026/ , https://jarvislabs.ai/ai-faqs/best-gpu-for-fine-tuning-llms
+[^vram]: Per-model QLoRA VRAM and 24GB fit (7B/13B comfortable, 34B with care). QLoRA 70B is ~50GB total (4-bit base ~35GB + adapter grads/optimizer/activations) per the cited Spheron table (~52GB, fits a single 80GB H100, does not fit a single 48GB card) — i.e. it clears no single consumer card and only marginally a 2×4090 rig; the original QLoRA paper demonstrated 65B on a single 48GB GPU. Figures are order-of-magnitude planning estimates. Spheron "GPU VRAM Requirements to Fine-Tune LLMs in 2026"; jarvislabs GPU-for-fine-tuning FAQ. https://www.spheron.network/blog/gpu-vram-requirements-fine-tune-llm-2026/ , https://jarvislabs.ai/ai-faqs/best-gpu-for-fine-tuning-llms
 
 [^trl]: TRL v1.0 (April 2026) unified SFT / reward modeling / DPO / GRPO; GRPO is more memory-efficient than PPO (drops the value model). HF TRL v1.0 blog and MarkTechPost coverage. https://huggingface.co/blog/trl-v1 , https://github.com/huggingface/trl
 
-[^pytorch]: PyTorch 2.10 released Jan 21 2026; 2.11 line current; `torch.compile` mature with measured speedups over eager. PyTorch releases + 2.9 release blog. https://github.com/pytorch/pytorch/releases , https://pytorch.org/blog/pytorch-2-9/ — **Flag:** exact-latest 2.x point version as of publication should be re-verified; sources gave slightly inconsistent 2.10/2.11 dates.
+[^pytorch]: PyTorch 2.10 released Jan 21 2026; 2.11 Mar 23 2026; 2.12 (Jun 17 2026) current latest; `torch.compile` mature with measured speedups over eager. PyTorch releases page. https://github.com/pytorch/pytorch/releases — **Flag:** the exact-latest 2.x point version as of publication should be re-verified before pinning; Loom images pin a specific known-good 2.x line, which need not be the newest.
 
 [^fsdp2]: FSDP2 uses DTensor-based sharding, deterministic memory release, lower per-GPU memory, `torch.compile` composability; FSDP1 deprecated in recent PyTorch. PyTorch FSDP2 tutorial; OSC FSDP2 HOWTO. https://docs.pytorch.org/tutorials/intermediate/FSDP_tutorial.html , https://www.osc.edu/resources/getting_started/howto/howto_pytorch_fully_sharded_data_parallel_fsdp2
 

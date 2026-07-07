@@ -147,7 +147,7 @@ $ loom data push ./corpus
   manifest: corpus@v2  sha256:9f3c… (immutable)
 
 # Launch a fine-tune referencing the dataset by version.
-$ loom run --image train:latest --data corpus@v2 --gpu 1x4090 -- \
+$ loom run --image loom/train:2026.07-cu126-torch2.12 --data corpus@v2 --gpu 1x4090 -- \
       python finetune.py --epochs 3
 
   [prepare]  node nyc-7f3a selected
@@ -155,13 +155,13 @@ $ loom run --image train:latest --data corpus@v2 --gpu 1x4090 -- \
   [prepare]  manifest validated (Merkle root matches)          ✔
   [run]      GPU meter START — training…
   ...
-  [done]     checkpoint ckpt@a17e  |  lineage: corpus@v2 + train:latest@d91f + base:llama-3-8b → ckpt@a17e
+  [done]     checkpoint ckpt@a17e  |  lineage: corpus@v2 + loom/train@sha256:d91f… + base:llama-3-8b → ckpt@a17e
 ```
 
 **Re-run on the cache hit.** The renter tweaks a hyperparameter and reruns the same job:
 
 ```bash
-$ loom run --image train:latest --data corpus@v2 --gpu 1x4090 -- \
+$ loom run --image loom/train:2026.07-cu126-torch2.12 --data corpus@v2 --gpu 1x4090 -- \
       python finetune.py --epochs 4
 
   [prepare]  node nyc-7f3a selected (or any peer with chunks warm)
