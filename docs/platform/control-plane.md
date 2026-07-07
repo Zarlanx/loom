@@ -12,7 +12,7 @@ Loom's control plane is a small set of stateless (or near-stateless) services ar
 flowchart TB
   subgraph clients [Clients]
     R[Renter CLI / SDK]
-    H[Host agents<br/>outbound WS/QUIC]
+    H[Host agents<br/>outbound QUIC/WSS]
     ADM[Admin console]
   end
 
@@ -49,7 +49,7 @@ flowchart TB
 
 **Scheduler.** A single process (see §4 for the honest scaling story) that reads schedulable work and free capacity from Postgres, runs filter → score → commit, and writes leases. It consumes fleet-state and job-state events from NATS to stay warm, but Postgres is the source of truth it reconciles against.
 
-**Agent-gateway connection service.** Terminates the outbound-only WebSocket/QUIC control channels from host agents, authenticates them via mTLS-bound agent identity, and bridges each connection to NATS subjects. Agents never reach the API or scheduler directly; the gateway is the membrane. It publishes agent events (heartbeats, attempt state, usage records) onto NATS and delivers control messages (dispatch, checkpoint, cancel, preempt) back down the socket. It is the only service that holds long-lived stateful connections, so it is scaled and sharded independently of the rest.
+**Agent-gateway connection service.** Terminates the outbound-only QUIC/WSS control channels from host agents, authenticates them via mTLS-bound agent identity, and bridges each connection to NATS subjects. Agents never reach the API or scheduler directly; the gateway is the membrane. It publishes agent events (heartbeats, attempt state, usage records) onto NATS and delivers control messages (dispatch, checkpoint, cancel, preempt) back down the socket. It is the only service that holds long-lived stateful connections, so it is scaled and sharded independently of the rest.
 
 **State store — Postgres.** One primary, streaming replica(s), PITR. Holds every durable fact: hosts, nodes, jobs, attempts, leases, deployments, replicas, usage records, accounts, balances, transactions. Postgres is also the transactional-outbox substrate for exactly-once effects (§3).
 
@@ -252,7 +252,7 @@ This is the money path, so it is the most defensively engineered part of the con
 
 ```mermaid
 flowchart LR
-  A[Agent<br/>signs record / N s] -->|WS/QUIC| G[Gateway]
+  A[Agent<br/>signs record / N s] -->|QUIC/WSS| G[Gateway]
   G -->|JetStream 'usage'| Q{{NATS durable stream}}
   Q --> AGG[Aggregator<br/>validate + dedupe]
   AGG -->|valid| PG[(usage_records)]
@@ -292,7 +292,7 @@ Pricing/payout *mechanics* (fees, currencies, payout schedules) are the marketpl
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/hosts/enroll` | Enroll a machine, bind agent identity |
-| — | agent WS/QUIC via gateway | status, heartbeats, usage, control (not REST) |
+| — | agent QUIC/WSS via gateway | status, heartbeats, usage, control (not REST) |
 | `GET` | `/v1/hosts/me/earnings` | Payout accrual + history |
 
 **Admin surface** (auth: SSO): fleet inspection, dispute resolution, manual preempt/drain, reliability overrides, clawback approval.

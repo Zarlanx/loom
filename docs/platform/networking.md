@@ -2,7 +2,7 @@
 
 Status: design draft · July 2026 · owner: platform
 
-This document specifies how bytes move across Loom. It owns **transport**: the control channel, NAT traversal, tunnel establishment, the inference data path, bulk transfer, and how workload traffic is plumbed on the host. It does *not* own policy: what egress is *permitted* is decided in [../platform/isolation.md](../platform/isolation.md); *why* renter identity is stripped before traffic reaches a node is decided in [../platform/security.md](../platform/security.md); the weight-cache *content model* (chunking, content-addressing, placement) is decided in [../ml-lifecycle/serving.md](../ml-lifecycle/serving.md). We own how those decisions are physically carried on the wire.
+This document specifies how bytes move across Loom. It owns **transport**: the control channel, NAT traversal, tunnel establishment, the inference data path, bulk transfer, and how workload traffic is plumbed on the host. It does *not* own policy: what egress is *permitted* is decided in [./isolation.md](./isolation.md); *why* renter identity is stripped before traffic reaches a node is decided in [./security.md](./security.md); the weight-cache *content model* (chunking, content-addressing, placement) is decided in [../ml-lifecycle/serving.md](../ml-lifecycle/serving.md). We own how those decisions are physically carried on the wire.
 
 The hard constraint shaping everything below: **agents never open inbound ports.** Home machines sit behind NAT, often CGNAT, and their owners will not — and should not — port-forward. Every connection an agent makes is outbound. This is the same box Tailscale, ngrok, and every reverse-tunnel product live in, and we borrow their playbook.
 
@@ -20,13 +20,13 @@ The control plane is a nervous system: thin, constant, reliable. The data plane 
 
 ## 2. The control channel
 
-Each agent holds exactly **one** long-lived connection to a **connection-gateway** (operator infra, horizontally scaled, fronted by NATS internally per [../platform/host-agent.md](../platform/host-agent.md)). This is the agent's only unconditional dependency.
+Each agent holds exactly **one** long-lived connection to a **connection-gateway** (operator infra, horizontally scaled, fronted by NATS internally per [./host-agent.md](./host-agent.md)). This is the agent's only unconditional dependency.
 
 **Transport: QUIC, WSS fallback.** The primary transport is QUIC (over UDP/443), which gives us stream multiplexing, head-of-line-blocking avoidance, and — critically — connection migration (§2.3). Some hostile middleboxes (corporate proxies, a minority of CGNAT deployments, captive-portal networks) block or throttle UDP/443. When the agent cannot establish or sustain QUIC, it falls back to **WSS over TCP/443**, which is indistinguishable from HTTPS to a middlebox and gets through essentially everywhere. The agent probes QUIC first on every cold start and periodically re-probes; WSS is strictly the fallback because it reintroduces TCP head-of-line blocking across our multiplexed streams.
 
 We implement the QUIC side with **quinn**, the mature pure-Rust async QUIC implementation (RFC 9000, client+server) ([quinn-rs/quinn](https://github.com/quinn-rs/quinn)). Rust keeps this in-process with the rest of the agent with no FFI.
 
-**Authentication: mTLS with enrollment identity keys.** At enrollment (see [../platform/host-agent.md](../platform/host-agent.md)) each agent generates a keypair and receives a client certificate bound to its `agent_id`. The control connection is mTLS: the gateway pins our CA and validates the agent cert; the agent pins the gateway cert. There is no password, no bearer token on the wire that can be replayed — possession of the enrollment private key *is* the identity. Compromised or revoked agents are handled by CRL/short-lived-cert rotation at the gateway.
+**Authentication: mTLS with enrollment identity keys.** At enrollment (see [./host-agent.md](./host-agent.md)) each agent generates a keypair and receives a client certificate bound to its `agent_id`. The control connection is mTLS: the gateway pins our CA and validates the agent cert; the agent pins the gateway cert. There is no password, no bearer token on the wire that can be replayed — possession of the enrollment private key *is* the identity. Compromised or revoked agents are handled by CRL/short-lived-cert rotation at the gateway.
 
 **Multiplexed streams.** Over the single connection we run independent QUIC streams so a slow log upload never blocks a heartbeat:
 
@@ -35,7 +35,7 @@ We implement the QUIC side with **quinn**, the mature pure-Rust async QUIC imple
 - **logs** — agent → gateway job stdout/stderr and structured events. Backpressured; may lag.
 - **metering** — agent → gateway signed usage records (GPU-seconds, bytes relayed). Must be durable; buffered to disk on the host and re-sent after reconnect so we never lose a billing record across a blip.
 
-**Reconnect / backoff.** On disconnect the agent reconnects with exponential backoff + full jitter (base 500 ms, cap ~30 s), re-probing QUIC-then-WSS each cycle. Metering and unacked logs are persisted locally and replayed on reconnect (idempotent by record ID). The gateway treats a missed heartbeat window as "node draining," stops routing new work to it, but does not immediately fail in-flight jobs — a 30 s home-internet hiccup should not evict a running training job.
+**Reconnect / backoff.** On disconnect the agent reconnects with exponential backoff + full jitter (base 500 ms, cap ~30 s), re-probing QUIC-then-WSS each cycle. Metering and unacked logs are persisted locally and replayed on reconnect (idempotent by record ID). The gateway treats a briefly-silent agent as temporarily unhealthy, stops routing new work to it, but does not immediately fail in-flight jobs — a 30 s home-internet hiccup should not evict a running training job. Only sustained silence past the control plane's lost threshold (**90 s**, see [control-plane.md](./control-plane.md)) declares the attempt lost and triggers requeue-from-checkpoint.
 
 ### 2.3 Surviving IP changes (QUIC connection migration)
 
@@ -91,13 +91,13 @@ Tailscale — the reference implementation of exactly this design — reports th
 
 > ⚠️ **Flag: the "over 90%" figure is Tailscale's estimate for a *basic* implementation, not a controlled measurement of Loom's population.** Our population skews *worse* than Tailscale's: consumer/prosumer home GPUs sit disproportionately behind CGNAT (mobile-carrier home internet, apartment-building shared NAT), which is exactly the hard case. We should plan for a **materially higher relay rate than 10%** until we measure it, and instrument the real direct-vs-relay ratio from day one.
 
-**Every relayed session costs us operator egress bandwidth**, symmetric to the traffic it carries. For token streams (§4) that's negligible; for a fat interactive port-forward it is not. This is a direct input to unit economics: **relay bandwidth is a cost line that must be priced in.** → *Flagged to [../product/marketplace.md] (pricing): relayed sessions carry an operator egress cost; consider a modest pricing signal or a "direct-connectable" node preference so we're not subsidizing hard-NAT nodes indefinitely.*
+**Every relayed session costs us operator egress bandwidth**, symmetric to the traffic it carries. For token streams (§4) that's negligible; for a fat interactive port-forward it is not. This is a direct input to unit economics: **relay bandwidth is a cost line that must be priced in.** → *Flagged to [marketplace.md](../product/marketplace.md) (pricing): relayed sessions carry an operator egress cost; consider a modest pricing signal or a "direct-connectable" node preference so we're not subsidizing hard-NAT nodes indefinitely.*
 
 ## 4. The inference path
 
 Inference is a special, high-value case of the data plane with its own shape.
 
-- **Renter → gateway** is ordinary web traffic: HTTPS to our **OpenAI-compatible gateway**. The renter sees a standard `POST /v1/chat/completions`. The gateway does auth, billing, routing, and mid-stream failover; it strips renter identity before anything reaches a node (rationale in [../platform/security.md](../platform/security.md)). Nothing exotic here — TLS termination, HTTP/2 or HTTP/3, standard.
+- **Renter → gateway** is ordinary web traffic: HTTPS to our **OpenAI-compatible gateway**. The renter sees a standard `POST /v1/chat/completions`. The gateway does auth, billing, routing, and mid-stream failover; it strips renter identity before anything reaches a node (rationale in [./security.md](./security.md)). Nothing exotic here — TLS termination, HTTP/2 or HTTP/3, standard.
 - **Gateway → node** uses the tunnel from §3 (direct WG when punchable, relay otherwise). Because the gateway is operator infra with a stable public presence, gateway↔node traversal is *easier* than renter↔node — the gateway is effectively a well-known peer, so more of these land direct.
 - **Token streams are tiny.** An SSE/streamed completion is a few KB/s. **Latency dominates, bandwidth is irrelevant.** This flips the usual optimization: for inference we care about RTT and jitter, and relaying token streams is cheap even when we can't punch. We therefore *don't* aggressively insist on direct connections for inference — a low-latency relay near the node is fine.
 - **Warm connection pools.** The gateway maintains per-node warm tunnels and connection pools, so a request doesn't pay handshake/traversal cost on the hot path. Nodes joining the serving fleet establish their gateway tunnel *before* being marked ready.
@@ -135,14 +135,14 @@ Therefore checkpoint upload is **throttled with an owner-configurable cap** (def
 
 ## 6. Workload traffic plumbing on the host
 
-Renter workloads run in a sandbox. **The sandbox never touches the host's real interfaces.** All renter-facing connectivity terminates at the **agent process**, which forwards into the sandbox. Physical plumbing depends on isolation tier (tiers defined in [../platform/isolation.md](../platform/isolation.md)):
+Renter workloads run in a sandbox. **The sandbox never touches the host's real interfaces.** All renter-facing connectivity terminates at the **agent process**, which forwards into the sandbox. Physical plumbing depends on isolation tier (tiers defined in [./isolation.md](./isolation.md)):
 
 - **Tier B (container/namespace):** the sandbox gets a **veth pair** into a **network namespace**, the host-side veth attached to an **agent-managed bridge**. The agent owns the bridge and the routing.
 - **Tier A (microVM):** the sandbox gets a **virtio-net** device bridged the same way. From the network's perspective it looks the same: a private link into an agent-controlled bridge.
 
-On that bridge the agent runs an **nftables egress firewall** implementing the policy from [../platform/isolation.md](../platform/isolation.md): **default-deny**, an **allowlist** of permitted destinations, and a hard **no-RFC1918** rule so a workload can never reach the home LAN (router admin page, NAS, other household devices, printers). The sandbox's default route points at the agent; the agent NATs/proxies allowed egress out through the (throttled) host uplink and drops everything else.
+On that bridge the agent runs an **nftables egress firewall** implementing the policy from [./isolation.md](./isolation.md): **default-deny**, an **allowlist** of permitted destinations, and a hard **no-RFC1918** rule so a workload can never reach the home LAN (router admin page, NAS, other household devices, printers). The sandbox's default route points at the agent; the agent NATs/proxies allowed egress out through the (throttled) host uplink and drops everything else.
 
-The key security property, owned here as *mechanism*: **there is no path from inside the sandbox to the host's LAN or loopback.** The sandbox sees an agent-controlled interface and nothing else. Even DNS goes through an agent-controlled resolver so we can enforce the allowlist by name, not just IP. (Policy — *what* is on the allowlist, LAN-access prohibition — is [../platform/isolation.md](../platform/isolation.md)'s call; we guarantee it's physically unbypassable.)
+The key security property, owned here as *mechanism*: **there is no path from inside the sandbox to the host's LAN or loopback.** The sandbox sees an agent-controlled interface and nothing else. Even DNS goes through an agent-controlled resolver so we can enforce the allowlist by name, not just IP. (Policy — *what* is on the allowlist, LAN-access prohibition — is [./isolation.md](./isolation.md)'s call; we guarantee it's physically unbypassable.)
 
 ## 7. Bandwidth and QoS: don't ruin the owner's home internet
 
@@ -174,4 +174,4 @@ The gateway and relays are our public attack surface; agents (outbound-only) are
 
 ---
 
-*Cross-references: [../platform/host-agent.md](../platform/host-agent.md) (enrollment, agent process, control-plane internals) · [../platform/isolation.md](../platform/isolation.md) (sandbox tiers, egress policy) · [../ml-lifecycle/serving.md](../ml-lifecycle/serving.md) (weight-cache content model, engine determinism) · [../platform/security.md](../platform/security.md) (identity stripping) · [../product/marketplace.md] (pricing of relayed bandwidth).*
+*Cross-references: [./host-agent.md](./host-agent.md) (enrollment, agent process, control-plane internals) · [./isolation.md](./isolation.md) (sandbox tiers, egress policy) · [../ml-lifecycle/serving.md](../ml-lifecycle/serving.md) (weight-cache content model, engine determinism) · [./security.md](./security.md) (identity stripping) · [marketplace.md](../product/marketplace.md) (pricing of relayed bandwidth).*

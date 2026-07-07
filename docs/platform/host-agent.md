@@ -10,7 +10,7 @@ This document specifies the agent: its design goals, process architecture, lifec
 
 **Invisible when idle.** The overwhelming majority of an agent's life is spent doing nothing but holding a connection open and sampling hardware every few seconds. In that state it must be unnoticeable:
 
-- **< 30 MB RSS idle.** A tokio-based Rust binary with a handful of background tasks and no loaded ML runtime has no business exceeding this. We budget the steady-state resident set at under 30 MB and treat regressions as bugs. (For comparison, the idle agent holds one WebSocket/QUIC connection, a timer wheel, and small ring buffers for metrics/logs — there is no reason for it to be large.)
+- **< 30 MB RSS idle.** A tokio-based Rust binary with a handful of background tasks and no loaded ML runtime has no business exceeding this. We budget the steady-state resident set at under 30 MB and treat regressions as bugs. (For comparison, the idle agent holds one QUIC/WSS connection, a timer wheel, and small ring buffers for metrics/logs — there is no reason for it to be large.)
 - **Near-zero idle CPU.** Sampling cadence is measured in seconds, not milliseconds (see §7). Between samples the runtime parks. Target: statistically indistinguishable from noise on `top`.
 - **No fans spinning.** The idle agent issues only NVML *read* queries. It never launches GPU work of its own except the enrollment/re-verification benchmark (§4), which is explicitly gated and rate-limited. If the owner's GPU is spinning up its fans, a renter job is running and the owner opted in.
 
@@ -29,7 +29,7 @@ The agent is one tokio multi-threaded runtime hosting a set of long-lived tasks 
 ```mermaid
 flowchart TB
     subgraph agent["loom-host agent (unprivileged main process)"]
-        CC["Control-channel client<br/>(WS/QUIC, mTLS, heartbeats)"]
+        CC["Control-channel client<br/>(QUIC/WSS, mTLS, heartbeats)"]
         HM["Hardware monitor<br/>(NVML / rocm-smi poll)"]
         SS["Sandbox supervisor<br/>(drives Tier B / Tier A)"]
         MET["Metering<br/>(sample + sign + batch)"]
@@ -79,13 +79,13 @@ flowchart TB
 stateDiagram-v2
     [*] --> Enrolling
     Enrolling --> Idle: enrolled + attested
-    Idle --> Claimed: claim accepted<br/>(policy check passes)
+    Idle --> Claimed: claim accepted (policy check passes)
     Claimed --> Preparing: pull image + weights
     Preparing --> Running: sandbox constructed
-    Running --> TearingDown: job complete /<br/>failed / checkpointed
+    Running --> TearingDown: job complete / failed / checkpointed
     TearingDown --> Idle: verify-clean passes
 
-    Running --> TearingDown: owner interrupt<br/>(game start / DND)
+    Running --> TearingDown: owner interrupt (game start / DND)
     Preparing --> TearingDown: owner interrupt
     Claimed --> Idle: policy revoked before start
 
@@ -132,8 +132,8 @@ All crates below were checked against crates.io / their repos in **July 2026**. 
 |---|---|---|
 | Async runtime | **tokio** | The default. Multi-threaded scheduler, timers, channels, `tokio::process`. Non-negotiable for this workload. |
 | TLS | **rustls** | Pure-Rust, no OpenSSL dependency on a static binary; used for mTLS control channel. Actively maintained, integrates with both quinn and tokio-tungstenite. |
-| Control channel (primary) | **tokio-tungstenite** | Most-downloaded, best-maintained Rust WebSocket lib; works directly with tokio; rustls TLS via feature flag; versions > 0.26 are notably more performant. WebSocket is the portable default that traverses restrictive networks. ([lib.rs](https://lib.rs/crates/tokio-tungstenite)) |
-| Control channel (upgrade) | **quinn** | Async QUIC on tokio + rustls. Used where QUIC is reachable for lower-latency, head-of-line-blocking-free multiplexing of the log/metric/usage streams. Actively maintained. ([quinn-rs/quinn](https://github.com/quinn-rs/quinn)) |
+| Control channel (primary) | **quinn** | Async QUIC on tokio + rustls. The primary transport ([networking.md](./networking.md) §2): QUIC over UDP/443 gives head-of-line-blocking-free stream multiplexing and connection migration across residential IP changes. Actively maintained. ([quinn-rs/quinn](https://github.com/quinn-rs/quinn)) |
+| Control channel (fallback) | **tokio-tungstenite** | Most-downloaded, best-maintained Rust WebSocket lib; works directly with tokio; rustls TLS via feature flag; versions > 0.26 are notably more performant. WSS over TCP/443 is the portable fallback that traverses UDP-hostile middleboxes by looking like ordinary HTTPS ([networking.md](./networking.md) §2). ([lib.rs](https://lib.rs/crates/tokio-tungstenite)) |
 | NVIDIA inventory/metrics | **nvml-wrapper** | Safe wrapper over NVML; loads the library at runtime via `libloading`, so the same binary runs on GPU-less machines and degrades gracefully. Supports NVML 12. Maintained under the `rust-nvml` org. ([rust-nvml/nvml-wrapper](https://github.com/rust-nvml/nvml-wrapper)) |
 | Host inventory | **sysinfo** | CPU, memory, disk, process enumeration for policy (detect foreground GPU/game processes) and host inventory. Mature, cross-platform. |
 | Container control (Tier B) | **bollard** | Typed async Docker API client on hyper/tokio; also speaks Podman. We drive `nvidia-container-toolkit` + gVisor `runsc` **through the Docker/containerd daemon** rather than shelling out, for typed errors and stream handling. ([fussybeaver/bollard](https://github.com/fussybeaver/bollard)) |
@@ -190,8 +190,8 @@ Teardown is where renter privacy is actually enforced. It runs as an ordered, fa
 
 1. **Kill the sandbox.** Terminate the container (`runc`/youki) or shut down the microVM (CH `shutdown` / power-off). SIGTERM → grace → SIGKILL. For Tier A, VM shutdown drops the VFIO device.
 
-2. **Scrub VRAM.** This is the honest hard part. **NVIDIA does not clear VRAM for you.** `cudaMalloc` explicitly returns uninitialized memory, memory is not zeroed on `cudaFree` or context destruction, and a decade of research (LeftoverLocals / CVE-2023-4969 and predecessors) shows real recovery of model weights, KV caches, and user data from residual VRAM. ([barrack.ai](https://blog.barrack.ai/nvidia-cuda-never-clears-gpu-memory/)) The only firmware-guaranteed scrub is the Secure Processor scrub during a Function-Level Reset in H100 Confidential-Computing mode — **which consumer/prosumer cards do not have.** So on our target hardware we scrub in software, defense-in-depth:
-   - **Allocate-and-zero sweep.** Immediately after the tenant process is gone, allocate VRAM in a loop until allocation fails and `cudaMemset` every block to zero, then free. This overwrites memory the driver would otherwise hand to the next allocator uninitialized. (Equivalent to NVIDIA's own `gpu-admin-tools --clear-memory` approach.)
+2. **Scrub VRAM.** This is the honest hard part. **NVIDIA does not clear VRAM for you.** `cudaMalloc` explicitly returns uninitialized memory, memory is not zeroed on `cudaFree` or context destruction, and a decade of research shows real recovery of model weights, KV caches, and user data from residual GPU memory left behind by a prior process. ([barrack.ai](https://blog.barrack.ai/nvidia-cuda-never-clears-gpu-memory/)) (A related but distinct class of bug is LeftoverLocals / CVE-2023-4969, which leaks GPU *local/shared* memory across kernels — it affected AMD, Apple, Qualcomm and Imagination GPUs, and NVIDIA stated its devices were **not** affected; we cite it only as evidence that GPU memory is routinely not cleared between tenants, not as an NVIDIA-VRAM claim. [Trail of Bits](https://blog.trailofbits.com/2024/01/16/leftoverlocals-listening-to-llm-responses-through-leaked-gpu-local-memory/)) The only firmware-guaranteed scrub is the Secure Processor scrub during a Function-Level Reset in H100 Confidential-Computing mode — **which consumer/prosumer cards do not have.** So on our target hardware we scrub in software, defense-in-depth:
+   - **Allocate-and-zero sweep.** Immediately after the tenant process is gone, allocate VRAM in a loop until allocation fails and `cudaMemset` every block to zero, then free. This overwrites memory the driver would otherwise hand to the next allocator uninitialized. (This is the same allocate-and-overwrite approach NVIDIA's own `gpu-admin-tools` memory-clearing utility uses; we should validate the exact tool/flag we shell out to at build time.)
    - **GPU reset where possible.** When no other GPU consumer is present (true between tenants on a dedicated-to-Loom window), issue a GPU reset (`nvidia-smi -r` / NVML device reset) to clear HW+SW state. This requires no application holding the device and root — hence it goes through the helper. On a machine where the owner also games on the same card, a full reset may not be available mid-session; the allocate-and-zero sweep is the fallback.
    - **ECC scrub note.** On cards with ECC enabled, driver init runs a memory scrub; we don't rely on this (consumer cards often lack ECC) but record it when present.
 
