@@ -412,7 +412,7 @@ sequenceDiagram
         A1->>CP: LogChunk / Heartbeat
     end
     Note over A1: Owner launches a game — owner-interrupt
-    A1->>A1: policy flips to no; initiate checkpoint (agent-driven)
+    A1->>A1: policy flips to no — initiate checkpoint (agent-driven)
     A1->>OBJ: upload checkpoint shards (bulk)
     A1->>CP: JobCheckpointed at1 uri=ckpt-1 shards=8 complete=true
     A1->>CP: JobFailed at1 exit_class=NODE_FAULT detail="owner_interrupt"
