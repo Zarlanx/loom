@@ -9,6 +9,10 @@ This is the design-phase documentation for Loom, a distributed GPU compute platf
 - [design-review.md](architecture/design-review.md) — red-team self-critique: ranked findings, pre-build spikes, verdict
 - [external-review.md](architecture/external-review.md) — disposition record for the independent external review (Codex, 2026-07-07): endorsements, the 13 accepted-and-applied fixes, and accepted follow-up work
 
+## Build (implementation plan)
+
+- [build/](build/README.md) — the Phase-1 build plan: the authoritative 25-PR DAG, milestones, the parallelization/staffing model, workspace setup, and the research tracks. How the design docs become software.
+
 ## Decisions
 
 - [adr/](adr/README.md) — Architecture Decision Records with context, consequences, and revisit-when triggers
