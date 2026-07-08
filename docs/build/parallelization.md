@@ -92,9 +92,9 @@ So the honest maximum is **four concurrent tracks at the start of Wave 1** (PR-0
 
 Echoing [README §4](./README.md#4-critical-path-the-real-delivery-floor): the longest dependency chain is
 
-> **PR-01 → PR-03 → PR-05 → PR-06 → PR-09 → PR-11 → PR-12 → PR-13 (M1) → PR-16 → PR-17 (M3)**
+> **PR-01 → PR-03 → PR-05 → PR-06 → PR-09 → PR-11 → PR-12 → PR-13 (M1) → PR-16 → PR-17 (M3) → PR-22 (M4)**
 
-That is **10 serialized PRs** (the longest chain in the DAG — nine dependency edges), five of them owned by the same invariant-core person, and it sets the wall-clock floor no matter how many people you add. The reason is structural, not organizational:
+The floor to **M3** is the first **ten PRs** (`…→ PR-17`); but Phase 1's roadmap exit criteria are M3 *and* M4, and **PR-22 (M4) depends on PR-17**, so the honest floor to a *complete* Phase 1 is **eleven PRs** — PR-22 cannot start until checkpoint-resume (PR-17) and real-GPU execution (PR-16) exist, because its whole gate is "a mid-job node death resumes elsewhere on real hardware." (PR-26 `bootstrap-auth`, added in the [second review](./review-log.md), sits at the same depth as PR-06 and does not lengthen the chain.) Five of these are owned by the same invariant-core person, and the chain sets the wall-clock floor no matter how many people you add. The reason is structural, not organizational:
 
 1. **The spine is inherently sequential.** You cannot fence leases (PR-12) before the store schema that holds `leases` exists (PR-05); you cannot resume a checkpoint (PR-17) before there is a real GPU job to checkpoint (PR-16); you cannot run a real GPU job before the skeleton proves the spine (PR-13). Each link *needs the previous one's output*. No amount of concurrency reorders a dependency.
 2. **The spine is single-owned by design** ([hard call #3](./README.md#1-the-five-hard-calls-read-this-before-the-table)). Split-brain correctness — never letting two nodes run and bill the same attempt — is exactly the bug a divided team ships and never closes. So PR-03/05/09/12/17 are one owner's coherent unit *on purpose*, which means they also cannot be parallelized *away* even in principle.
@@ -103,20 +103,21 @@ The practical consequence, stated plainly: **adding people past ~4 does not spee
 
 ```mermaid
 flowchart LR
-    P01["PR-01"] --> P03["PR-03"] --> P05["PR-05"] --> P06["PR-06"] --> P09["PR-09"] --> P11["PR-11"] --> P12["PR-12"] --> P13["PR-13 · M1"] --> P16["PR-16"] --> P17["PR-17 · M3"]
+    P01["PR-01"] --> P03["PR-03"] --> P05["PR-05"] --> P06["PR-06"] --> P09["PR-09"] --> P11["PR-11"] --> P12["PR-12"] --> P13["PR-13 · M1"] --> P16["PR-16"] --> P17["PR-17 · M3"] --> P22["PR-22 · M4"]
 
     %% width hanging off the spine — finishes behind it, never ahead
     P01 -.-> P02["PR-02"] & P04["PR-04"] & P07["PR-07"] & P24["PR-24"]
     P04 -.-> P10["PR-10"]
     P02 -.-> P08["PR-08"]
+    P05 -.-> P26["PR-26"] -.-> P09
     P11 -.-> P14["PR-14"] & P20["PR-20"] & P25["PR-25"]
     P16 -.-> P18["PR-18"] & P19["PR-19"]
-    P13 -.-> P22["PR-22"]
+    P21["PR-21"] -.-> P22
 
     classDef crit fill:#b71c1c,stroke:#7f0000,color:#fff,font-weight:bold;
     classDef width fill:#eceff1,stroke:#90a4ae,color:#37474f;
-    class P01,P03,P05,P06,P09,P11,P12,P13,P16,P17 crit;
-    class P02,P04,P07,P24,P10,P08,P14,P20,P25,P18,P19,P22 width;
+    class P01,P03,P05,P06,P09,P11,P12,P13,P16,P17,P22 crit;
+    class P02,P04,P07,P24,P10,P08,P26,P14,P20,P25,P18,P19,P21 width;
 ```
 
 The solid red chain is the floor. Everything dotted is width — parallelizable, useful, and unable to move the finish line.
@@ -192,7 +193,7 @@ The discipline: a research track can *inform* a PR but never *block* the spine. 
 
 The uncomfortable truth this doc exists to state: **with 2–3 engineers the wall-clock is close to the critical path anyway.** The width work fills slack behind the spine; it does not compress the spine.
 
-The methodology, without false precision: the critical path is **10 serialized PRs** (PR-01→03→05→06→09→11→12→13→16→17). At 2–3 engineers, the surrounding width — the other 15 PRs — mostly *hides behind* those 10, because whenever the spine owner is blocked on thought or review, the other engineers are draining Wave 1 seams, Wave 3 verticals, and Wave 4 polish that were going to have to happen anyway. So the phase length is roughly "however long 10 serialized, mostly single-owned PRs take," plus a modest tail where the last width work drains after M3.
+The methodology, without false precision: the critical path is **eleven serialized PRs to a complete Phase 1** (PR-01→03→05→06→09→11→12→13→16→17→22; ten of them to M3). At 2–3 engineers, the surrounding width — the other ~17 of the 28 PRs — mostly *hides behind* those eleven, because whenever the spine owner is blocked on thought or review, the other engineers are draining Wave 1 seams, Wave 3 verticals, and Wave 4 polish that were going to have to happen anyway. So the phase length is roughly "however long eleven serialized, mostly single-owned PRs take," plus a modest tail where the last width work drains after M4.
 
 This is why we do **not** put week numbers on it: the spine's length is a function of how hard lease-fencing and checkpoint-resume turn out to be (the roadmap's [named biggest risk](../product/roadmap.md#phase-1--self-hostable-core)), not of headcount. A fourth engineer buys you a shorter width tail and more slack coverage; it does not buy you a shorter spine. Staff for **coverage of the width and quality of the core**, not for compressing a critical path that is, by deliberate design, single-owned and sequential.
 
