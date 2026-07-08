@@ -5,6 +5,8 @@
 
 This doc is downstream of [training.md](./training.md), which owns the *stack* (PyTorch, TRL, Unsloth, FSDP2, Liger, `loom-ckpt`), the VRAM reality, and the interruption-tolerance mechanics. Recipes are a curated, cost-estimated, version-pinned wrapper over that stack — the "job templates / managed recipes" idea in [training.md](./training.md) §4, specified. It leans on [data.md](./data.md) for dataset manifests, [evaluation.md](./evaluation.md) for the terminal eval pass, [environments.md](./environments.md) for the pinned images a recipe references by digest, and [../product/deployment.md](../product/deployment.md) for the CLI narrative. It does **not** re-derive any of those; it composes them.
 
+> **Backend scope (ADR-0015).** The manifests and stack referenced here describe the **CUDA backend's** implementation. A recipe is one renter-facing contract with per-backend implementations (MLX: `mlx-lm` LoRA; CPU: llama.cpp); the backend-polymorphic contract and its `backends:` manifest field live in [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).
+
 ---
 
 ## 1. What a recipe is
@@ -27,7 +29,7 @@ A **recipe** is a versioned, immutable artifact — not a script and not a prese
 
 ## 2. Recipe manifest format
 
-A recipe is authored as a YAML manifest, validated and frozen at publish time. Below is `qlora-sft` in full. (JSON Schema is shown in YAML for readability; it is stored as JSON Schema Draft 2020-12.)
+A recipe is authored as a YAML manifest, validated and frozen at publish time. Below is `qlora-sft` in full. (JSON Schema is shown in YAML for readability; it is stored as JSON Schema Draft 2020-12.) Per [ADR-0015](../adr/0015-pluggable-compute-backends.md), the manifest also carries a `backends:` map — one entry per supported compute backend (`mlx` | `cuda` | `cpu`), each naming the backend's image or venv-bundle ref and its implementation — so a single recipe ref resolves to the right per-backend runtime at placement time; its shape is specified in [../platform/compute-backends.md](../platform/compute-backends.md) and omitted from the CUDA-only example below.
 
 ```yaml
 recipe: qlora-sft

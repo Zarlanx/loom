@@ -22,7 +22,7 @@ Everything below rests on one decision ([ADR-0013](../adr/0013-single-binary-sel
 
 `loomd` and `loom-hostd` run side-by-side on the same box. The control plane, the scheduler, and an embedded inference gateway all live inside `loomd`; the agent claims the local GPU. Storage is embedded SQLite; the job queue is in-process. There is no billing, no identity-stripping, no relay — everything is localhost, so there is nothing to anonymize and no NAT to traverse. There is a **single trusted user**, and the `loom` CLI simply points at `localhost`.
 
-This is the "install it on my gaming PC and fine-tune tonight" experience. The whole backend is two processes (arguably one box's worth of one binary plus an agent), a SQLite file, and a CLI.
+This is the "install it on my gaming PC and fine-tune tonight" experience. The whole backend is two processes (arguably one box's worth of one binary plus an agent), a SQLite file, and a CLI. On **macOS/Apple silicon** standalone (e.g. an M3 Max), jobs run via the **`ProcessDriver`** — a plain host process, no container isolation, acceptable precisely because standalone is a single trusted user — and the **MLX backend is first-class** there (the only path to Metal); see [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).
 
 ### Private fleet — machines you own
 

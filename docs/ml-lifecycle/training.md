@@ -4,6 +4,8 @@ Loom's training offering is built around one uncomfortable truth: our nodes are 
 
 This document covers the workload taxonomy we support, the software stack (as of July 2026), our interruption-tolerant checkpointing feature, managed recipes, single-host multi-GPU, and Hugging Face integration. Data ingestion is owned by [data.md](../ml-lifecycle/data.md); the images these jobs run in are owned by [environments.md](../ml-lifecycle/environments.md); how a job survives an owner-eject at the agent level is owned by [host-agent.md](../platform/host-agent.md); and measuring what a trained model is worth is [evaluation.md](../ml-lifecycle/evaluation.md).
 
+> **Backend scope (ADR-0015).** The stack described here (PyTorch, TRL, Unsloth, bitsandbytes, FSDP2) is the **CUDA backend's** implementation of training. The backend-polymorphic recipe contract — the same renter-facing recipe with per-backend implementations (MLX: `mlx-lm` LoRA; CPU: llama.cpp) — lives in [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).
+
 ---
 
 ## 1. Workload taxonomy for this hardware class
