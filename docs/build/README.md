@@ -8,6 +8,7 @@
 - [workspace-setup.md](./workspace-setup.md) — PR-01 in detail: the Cargo workspace, CI matrix, `xtask`, and the test conventions everything else inherits.
 - [research-tracks.md](./research-tracks.md) — the parallel, non-blocking validation spikes (T1–T4) and what each feeds.
 - [review-log.md](./review-log.md) — disposition records for external reviews of this build plan (what was endorsed, what was fixed).
+- [pr-breakdown.md](./pr-breakdown.md) — the sizing rule and the decomposition of every workstream below into small, stacked, independently-reviewable PRs (~66 in total). **This is the implementable unit of work.**
 
 ---
 
@@ -103,7 +104,7 @@ flowchart LR
 
 ## 3. The authoritative PR DAG
 
-Every PR below is one reviewable pull request. **Depends on** = must be merged first. **Parallel with** = no dependency either way; can be in flight simultaneously. **Owner constraint** flags the pieces that a single person must own for correctness (see hard call #3). Sizes are S/M/L as a planning aid, not a commitment.
+Each entry below is a **workstream (epic)**, not a single pull request — it lands as a *stack of small, independently-reviewable PRs* (the sizing rule and the full ~66-PR decomposition are in [pr-breakdown.md](./pr-breakdown.md); every entry here maps to 1–3 sub-PRs). This table is the **dependency map between workstreams**; an edge "PR-11 depends on PR-09" means `11a` waits on `09c` (the last sub-PR of the upstream stack). **Depends on** = must merge first. **Parallel with** = no dependency either way. **Owner constraint** flags the pieces one person must own for correctness (hard call #3). The **S/M/L** size is the *epic's* weight (an L epic is ~3 small PRs); the invariant-core PRs (PR-03b lease/fencing, PR-12 scheduler) deliberately stay coherent rather than split — see the [sizing rule's exception](./pr-breakdown.md#the-sizing-rule).
 
 ### Wave 0 — Foundations & Contracts
 
