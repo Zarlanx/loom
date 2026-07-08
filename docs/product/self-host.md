@@ -319,7 +319,7 @@ You are the operator, so here's the operator runbook. All of it is boring on pur
 **Upgrade.** Two moving parts, two mechanisms:
 
 - **CLI:** `loom self-update` fetches, checksums, signature-verifies, and swaps the `loom` binary in place.
-- **Coordinator + agents:** `loomd` and `loom-hostd` do a **staged upgrade with automatic rollback** — the updater stages the new binary, keeps the previous one, and if the new version crash-loops within a short probation window it reverts automatically and reports the failure (the same signed-release, keep-previous-binary, crash-loop-rollback logic the host agent uses — [host-agent.md](../platform/host-agent.md) §9). `loomd upgrade` triggers it; on a fleet, workers upgrade behind the coordinator.
+- **Coordinator + agents:** `loomd` and `loom-hostd` do a **staged upgrade with automatic rollback** — the updater stages the new binary, keeps the previous one, and if the new version crash-loops within a short probation window it reverts automatically and reports the failure (the same signed-release, keep-previous-binary, crash-loop-rollback logic the host agent uses — [host-agent.md](../platform/host-agent.md) §9). `loomd upgrade` triggers it; on a fleet, workers upgrade behind the coordinator. Schema changes obey the **N−1 compatibility contract** ([backend.md](../platform/backend.md) §4): `loomd upgrade` snapshots the database (`VACUUM INTO`) before applying migrations, and automatic rollback stays armed only while the previous binary can still run against the migrated schema — a release that must break that is flagged irreversible up front, and rollback then means restoring the pre-upgrade snapshot.
 
 ```
 $ loom self-update
