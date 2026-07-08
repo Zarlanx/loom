@@ -15,7 +15,7 @@ That is exactly what self-hosting delivers. The same recipes, the same curated i
 
 **Two concrete promises, and we design against them as hard targets:**
 
-- **Standalone, one box, under 15 minutes.** A single ML engineer with a gaming PC or a fresh GPU server goes from nothing to a working train/eval/deploy loop — `loom train --recipe qlora-sft` producing an adapter, `loom deploy` standing up a local endpoint — in under a quarter of an hour, most of which is a download progress bar.
+- **Standalone, one box, under 15 minutes to your first GPU command.** A single ML engineer with a gaming PC or a fresh GPU server goes from nothing to *install-to-first-GPU-command* — `loom doctor` green, the stack up, and a first `loom run` on the GPU — in under a quarter of an hour. **Honest qualifier:** that 15 minutes is install-to-first-command. Your **first** `loom train` / `loom deploy` additionally downloads the multi-GB curated image and the base-model weights the first time — bounded, shown with a live progress bar, and **cached thereafter** so every later run is fast. So "under 15 minutes" is the time to a working stack you can drive, not a promise that a from-cold first fine-tune also completes its multi-GB pulls inside the window (that depends on your downlink — see §9). We say this plainly here rather than only in §9.
 - **Private fleet, three machines, under 30 minutes.** A small team turns three spare rigs into a private training cluster: one machine runs the coordinator; the others enroll as GPU workers; `loom run --gpu all` fans work across all three.
 
 **Setup stays small on purpose.** What you install is two binaries — `loomd` (the coordinator) and `loom-hostd` (the GPU-machine agent), plus the `loom` CLI — each **tens of megabytes**, statically linked, no JVM, no Kubernetes, no Python runtime to manage. The *big* things (multi-GB CUDA runtime images, model weights) do **not** arrive at install time. They're pulled **lazily on first use** — the container image streams in on your first job via Nydus lazy pull ([environments.md](../ml-lifecycle/environments.md) §6), the base model downloads the first time a recipe references it — each with a live progress bar. Setup itself is small and fast; the heavy bytes show up only when a job actually needs them, and only once (they're cached after that).
@@ -49,7 +49,10 @@ loom doctor — checking this machine for standalone self-host
                 → Loom runs jobs inside a container runtime. Install one:
                     Ubuntu/Debian:  sudo apt install podman
                     or Docker:      https://docs.docker.com/engine/install/
-                  Rootless Podman is fine and recommended for a desktop.
+                  Note: the sandbox features loom-hostd enforces (cgroup
+                  limits, netns + egress firewall, GPU device injection)
+                  need the root helper and a root-capable runtime. Rootless
+                  Podman is a limited/experimental mode, not the day-one path.
                   Re-run `loom doctor` when done.
   IOMMU         not enabled in BIOS
                 → Optional. Without it you get Tier B (hardened container),
@@ -201,17 +204,22 @@ $ nvidia-smi                      # confirm the driver + card are visible
 $ curl -fsSL https://get.loom.dev/self-host | sh
 $ loom init --standalone --listen 0.0.0.0
   … (as §2.3) …
-  API:  http://0.0.0.0:8443   ← reachable from your laptop; token-authenticated
+  generating self-signed TLS cert for non-loopback bind
+              cert /etc/loom/tls/loomd.crt  ·  fingerprint sha256:4b1e…
+  API:  https://0.0.0.0:8443   ← reachable from your laptop; TLS + token-authenticated
 ```
 
-`--listen 0.0.0.0` binds the API to all interfaces so your laptop's `loom` CLI can drive the server remotely. **Auth is the local admin token** — every request carries it, so a bound-to-`0.0.0.0` API is not an open door. Point your CLI at it:
+`--listen 0.0.0.0` binds the API to all interfaces so your laptop's `loom` CLI can drive the server remotely. **Transport rule: a loopback bind (`127.0.0.1`) may use plain HTTP; any non-loopback bind REQUIRES TLS.** When you bind off-loopback, `loom init` generates a **self-signed certificate** for the server, and the CLI **pins its fingerprint on first connect** (trust-on-first-use) so the bearer token is never sent over an unauthenticated channel. **Auth is the local admin token** — every request carries it over TLS, so a bound-to-`0.0.0.0` API is not an open door. Point your CLI at it (note `https://`):
 
 ```
 # on your laptop
-$ loom config set server http://my-server.example:8443
+$ loom config set server https://my-server.example:8443
+  pinning server cert fingerprint sha256:4b1e… on first connect  ✔
 $ loom config set token loom_admin_7f3a…
-$ loom ps        # now talks to the remote server
+$ loom ps        # now talks to the remote server over TLS
 ```
+
+(The recommended path remains fronting `loomd` with a WireGuard/Tailscale mesh — §4 — so the API need never bind to a public interface at all; the self-signed-cert + pinning story is for when you bind off-loopback directly.)
 
 **The installer provides systemd units** so the stack survives reboots and runs unattended — this is the headless whole-stack deployment the founder asked for:
 
@@ -220,13 +228,13 @@ $ loom ps        # now talks to the remote server
 
 Both are installed disabled-by-default and enabled by `loom init`; `systemctl status loomd loom-hostd` shows health, and both self-restart on failure with backoff (same hardened-unit posture as the host agent — [host-agent.md](../platform/host-agent.md) §9).
 
-**Firewall: one port.** The only inbound port is the API (default `8443`). Open exactly that, ideally scoped to your own IP or VPN:
+**Firewall: one TCP port.** The only inbound port you must open is the API on **TCP `8443`** — and that one port carries **both** the renter/admin API *and* the agent transport: `loom-hostd` agents connect over **WSS on the same 8443**, so a fleet worker never needs a second port. Open exactly that, ideally scoped to your own IP or VPN:
 
 ```
 $ sudo ufw allow from <your-ip> to any port 8443 proto tcp
 ```
 
-There is no relay, no NAT traversal, and no second port: standalone talks to nothing outbound except the curated-image registry and Hugging Face for the lazy pulls, and inbound only on the API.
+**QUIC is optional.** For lower-latency fleet links you *may* additionally enable a QUIC listener on **UDP `8444`** (off by default); agents that can reach it upgrade to QUIC, and everything still works over the single TCP port if you don't. There is no relay and no NAT traversal in self-host: standalone talks to nothing outbound except the curated-image registry and Hugging Face for the lazy pulls, and inbound only on the API port (plus the optional UDP QUIC port if you turn it on).
 
 **Notebooks and TensorBoard, over the API — no relay needed.** On the hosted product, interactive sessions tunnel through the outbound-only relay because the host is a NAT'd stranger ([deployment.md](./deployment.md) §4). Self-hosting has no such problem: your server is directly reachable, so `loom notebook` and `loom port-forward` are **direct forwards over the API port**, not relay-brokered:
 
@@ -300,7 +308,7 @@ Self-hosting is the **same ML product** with the marketplace machinery removed. 
 | **Relay fabric / NAT traversal** | ✗ direct reachability on your network | ✓ |
 | Auth model | single **local admin token** | scoped `loom_sk_` keys, accounts |
 
-**Why isolation is still on by default — even for your own code.** The obvious question: if I'm the only user and it's my own job, why sandbox it at all? Because the threat on a single-tenant box isn't a malicious *tenant* — it's a **malicious dependency**. A `pip install` in a fine-tuning job pulls a transitive tree of packages any one of which could be compromised (typosquats, hijacked maintainer accounts, poisoned build steps — the standard supply-chain attack surface). Running that job in a hardened container (Tier B, the standalone default — gVisor `runsc` where the workload tolerates it, per [../platform/isolation.md](../platform/isolation.md)) means a bad wheel can't read your SSH keys, exfiltrate your other datasets, or pivot to the rest of your network. The curated-image + egress-allowlisted-mirror model ([environments.md](../ml-lifecycle/environments.md) §8) is defense-in-depth against *your own* dependencies, not against you. It costs you nothing and it's the difference between "a poisoned dep ran in a box" and "a poisoned dep ran as you." Leave it on.
+**Why isolation is still on by default — even for your own code.** The obvious question: if I'm the only user and it's my own job, why sandbox it at all? Because the threat on a single-tenant box isn't a malicious *tenant* — it's a **malicious dependency**. A `pip install` in a fine-tuning job pulls a transitive tree of packages any one of which could be compromised (typosquats, hijacked maintainer accounts, poisoned build steps — the standard supply-chain attack surface). Running that job in a hardened container (Tier B, the standalone default) means a bad wheel can't read your SSH keys, exfiltrate your other datasets, or pivot to the rest of your network. To be precise about what "isolation on by default" means here: it is the **container sandbox** — runc hardening (seccomp, dropped capabilities, and the egress policy below) — because on your own box you are a trusted user running your own code. **gVisor `runsc`/`nvproxy` is a qualification-gated upgrade** (config-selectable where the workload tolerates it, per [../platform/isolation.md](../platform/isolation.md)); it is mandatory only when running strangers' code (the marketplace case), not a requirement for self-hosting your own jobs. The curated-image + egress-allowlisted-mirror model ([environments.md](../ml-lifecycle/environments.md) §8) is defense-in-depth against *your own* dependencies, not against you. It costs you nothing and it's the difference between "a poisoned dep ran in a box" and "a poisoned dep ran as you." Leave it on.
 
 ---
 
@@ -320,13 +328,24 @@ $ loomd upgrade
   staging loomd 2026.08 … probation 90s … healthy ✓  (rollback armed but not needed)
 ```
 
-**Backup.** The entire state of a standalone install is **one SQLite file plus the artifact directory**. Back both up and you can restore the whole platform:
+**Backup.** The entire state of a standalone install is **one SQLite file plus the artifact directory** — but the two want *different* backup mechanisms, and you must not `rsync` a live SQLite file (a naive copy of a database mid-write can capture a torn, unrestorable snapshot).
 
-```
-$ rsync -a /var/lib/loom/  backup-host:/loom-backups/$(hostname)/
-```
+- **Database → SQLite online backup, via `loom backup`.** The planned `loom backup` command takes a **consistent** snapshot of `loom.db` using SQLite's online-backup path (`VACUUM INTO` / the `.backup` API), which is safe to run against a live, in-use database and produces a clean, restorable file. `loom restore` reverses it and **verifies** the restored database (integrity check + schema/version match) before swapping it in.
 
-That's it — `loom.db` (datasets, jobs, lineage, deployments) and `artifacts/` (chunks, checkpoints, adapters). No object store to snapshot, no cluster state. On the fleet profile, back up the coordinator's `/var/lib/loom`; workers hold only cache and are disposable.
+  ```
+  $ loom backup --out backup-host:/loom-backups/$(hostname)/loom-$(date +%F).db
+    snapshotting loom.db (VACUUM INTO, online) … 3.2k rows … verified ✔
+  $ loom restore --from backup-host:/loom-backups/host/loom-2026-07-07.db
+    integrity check ✔  schema v14 matches  ✔  restored
+  ```
+
+- **Artifacts / cache → `rsync` is fine.** The content-addressed `artifacts/` directory (chunks, checkpoints, adapters) is immutable-by-hash and safe to `rsync`:
+
+  ```
+  $ rsync -a /var/lib/loom/artifacts/  backup-host:/loom-backups/$(hostname)/artifacts/
+  ```
+
+That's it — the online DB snapshot (datasets, jobs, lineage, deployments) plus an `rsync` of `artifacts/`. No object store to snapshot, no cluster state. On the fleet profile, back up the coordinator's DB (via `loom backup`) and its `artifacts/`; workers hold only cache and are disposable.
 
 **Disk management.** Images and weights are the only large consumers (§7), and they're **capped and prunable**:
 
@@ -386,7 +405,7 @@ So a freshly installed, idle standalone Loom is **under ~130 MB of RAM and under
 | Symptom | Cause | Fix |
 |---|---|---|
 | `loom doctor`: `driver 535.x < floor 550` | Host NVIDIA driver below the image's floor ([environments.md](../ml-lifecycle/environments.md) §3) | Upgrade the driver (`sudo ubuntu-drivers install` or the CUDA-repo `.run`), then re-run `loom doctor`. Loom can't manage the kernel driver — you own it. |
-| `loom doctor`: `no Docker or Podman found` | No container runtime; jobs can't be isolated/launched | `sudo apt install podman` (rootless is fine) or install Docker Engine. The coordinator runs without it; **jobs** need it. |
+| `loom doctor`: `no Docker or Podman found` | No container runtime; jobs can't be isolated/launched | `sudo apt install podman` or install Docker Engine, run with the root helper (the sandbox's cgroup/netns/egress/GPU-injection features need a root-capable runtime; rootless Podman is a limited/future mode). The coordinator runs without a runtime; **jobs** need it. |
 | `Tier A unavailable — IOMMU not enabled` | No VFIO passthrough without IOMMU in BIOS/kernel | **Not a blocker.** Standalone defaults to **Tier B** (hardened container), which needs no IOMMU. Enable IOMMU only if you specifically want the microVM tier ([../platform/isolation.md](../platform/isolation.md)). |
 | Recipe rejected at submit: `est. peak VRAM 26GB > 24GB` | Model/settings exceed the card; the recipe's VRAM estimator caught it pre-flight ([recipes.md](../ml-lifecycle/recipes.md) §2, [training.md](../ml-lifecycle/training.md) §8) | Follow the named knobs: `--grad-checkpointing`, smaller `--micro-batch`, `--seq-len` down, drop to QLoRA, or target a bigger card in the fleet. The estimator warns *before* you spend the run. |
 | `loom init`/`enroll`: `address already in use :8443` | Port conflict (another service, or a second `loomd`) | `loom init --standalone --listen 0.0.0.0:9443` (or set `api_port` in `loom.toml`); update the CLI's `server` config to match. |

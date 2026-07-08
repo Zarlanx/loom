@@ -138,6 +138,8 @@ failure_policy:
 
 All v1 recipes are Loom-authored (§6). GPU-class guidance follows the taxonomy in [training.md](./training.md) §1; **no throughput numbers appear here** — per [training.md](./training.md) §7, we ship a range from the benchmark harness or nothing, never an invented constant.
 
+> **Phase 1 ships a subset.** This full catalog is the *target state*. The self-hostable core ([roadmap.md](../product/roadmap.md) Phase 1) ships exactly **one** managed recipe — `qlora-sft` — plus the `loom run` escape hatch. `full-ft-small`, `dpo`, `grpo`, `diffusion-lora`, `whisper-ft`, `classifier-ft`, and `embeddings-ft` land in Phase 2+.
+
 | Recipe | Base image | Typical GPU | Produces | Method basis |
 |---|---|---|---|---|
 | `qlora-sft` | `loom/train` | single 24GB (3090/4090) | LoRA adapter | QLoRA 4-bit NF4 + LoRA (TRL `SFTTrainer`) |

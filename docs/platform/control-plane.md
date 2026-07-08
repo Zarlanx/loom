@@ -90,8 +90,8 @@ CREATE TABLE nodes (
   isolation_tier    TEXT NOT NULL,          -- 'B' | 'A' | 'C' (future)
   region            TEXT NOT NULL,          -- coarse placement domain
   failure_domain    TEXT NOT NULL,          -- e.g. host-level; for replica spread
-  reliability_score NUMERIC(4,3) NOT NULL DEFAULT 0.500,  -- 0..1, see §5
-  price_per_sec     NUMERIC(12,6) NOT NULL, -- host ask; marketplace doc owns mechanics
+  reliability_score NUMERIC(4,3) NOT NULL DEFAULT 0.500,  -- 0..1, see §5 (not money)
+  price_per_sec_micro_usd BIGINT NOT NULL, -- host ask, integer micro-USD; marketplace doc owns mechanics
   status            TEXT NOT NULL DEFAULT 'offline',
                     -- 'offline'|'available'|'leased'|'draining'|'owner_ejected'
   avail_window      JSONB,                  -- optional thermal/idle windows
@@ -107,7 +107,7 @@ CREATE TABLE jobs (
   resource_claim JSONB NOT NULL,            -- {gpu_model?, min_vram_mb, gpus, ...}
   isolation_tier TEXT NOT NULL,             -- minimum acceptable tier
   region_pref    TEXT,
-  max_price_per_sec NUMERIC(12,6) NOT NULL, -- ceiling
+  max_price_per_sec_micro_usd BIGINT NOT NULL, -- ceiling, integer micro-USD
   workload_class TEXT NOT NULL DEFAULT 'batch', -- 'batch' | 'serving'
   checkpoint_uri TEXT,                       -- last durable checkpoint, if any
   state          TEXT NOT NULL DEFAULT 'submitted',
@@ -154,7 +154,9 @@ CREATE TABLE usage_records (
 );
 ```
 
-Other tables in the same shape but omitted for brevity: `hosts` (enrollment, agent identity, payout account), `gpus` (per-GPU inventory + benchmark fingerprint), `leases` (attempt/replica ↔ node claim + `expires_at`), `serving_deployments` and `replicas` (§4), and `accounts` / `balances` / `transactions` (§6). The `outbox` table (§3) sits alongside these.
+**Money is integer micro-USD, everywhere.** All monetary columns — `price_per_sec_micro_usd`, `max_price_per_sec_micro_usd`, and the balance/transaction amounts in `accounts`/`balances`/`transactions` — are stored as `BIGINT` integer **micro-USD** (1 USD = 1,000,000), never `NUMERIC`/decimal. This matches the wire contract in [renter-api.md §1.1](./renter-api.md) (`price_micro_usd`) and the storage decision in [backend.md §4](./backend.md), and it sidesteps decimal-type divergence between Postgres and SQLite entirely. Human-facing dollar formatting is a **conversion at the edge** (CLI/UI), not a database concern.
+
+Other tables in the same shape but omitted for brevity: `hosts` (enrollment, agent identity, payout account), `gpus` (per-GPU inventory + benchmark fingerprint), `leases` (attempt/replica ↔ node claim + `expires_at`), `serving_deployments` and `replicas` (§4), and `accounts` / `balances` / `transactions` (§6, integer micro-USD amounts). The `outbox` table (§3) sits alongside these.
 
 ## 3. Job lifecycle state machine
 
@@ -209,7 +211,7 @@ stateDiagram-v2
 
 The scheduler runs a classic three-phase loop per schedulable unit: **filter → score → commit**.
 
-**Filter (hard constraints).** From the pool of `nodes.status = 'available'`, keep only nodes that satisfy the job's resource claim: GPU model / VRAM, driver + CUDA version, isolation tier (node tier must be ≥ the job's minimum), region preference, reliability score floor, and `price_per_sec ≤ job.max_price_per_sec`. Everything here is expressible as a Postgres `WHERE` against the `nodes` index.
+**Filter (hard constraints).** From the pool of `nodes.status = 'available'`, keep only nodes that satisfy the job's resource claim: GPU model / VRAM, driver + CUDA version, isolation tier (node tier must be ≥ the job's minimum), region preference, reliability score floor, and `price_per_sec_micro_usd ≤ job.max_price_per_sec_micro_usd`. Everything here is expressible as a Postgres `WHERE` against the `nodes` index.
 
 **Score (soft preferences).** Rank survivors by a weighted sum:
 
@@ -277,7 +279,7 @@ This whole JetStream-native pipeline (durable `usage` stream, aggregator, billin
 
 ## 7. API surface sketch
 
-**OpenAPI is the source of truth.** The spec is hand-maintained and generates clients, docs, and request validation. REST for command/query; **SSE or WebSocket** for streams (log tails, live job status, deployment health).
+**OpenAPI is generated from code (code-first).** The spec is **not** hand-maintained: it is generated from the axum handler types via `utoipa` ([backend.md §8](./backend.md)), and a **CI gate diffs the generated spec against the committed one so any drift fails CI**. The generated spec then produces clients, docs, and request validation. REST for command/query; **SSE or WebSocket** for streams (log tails, live job status, deployment health).
 
 **Renter surface** (auth: **API keys**):
 

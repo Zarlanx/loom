@@ -7,6 +7,7 @@ This is the design-phase documentation for Loom, a distributed GPU compute platf
 - [overview.md](architecture/overview.md) — system components, request/job flows, technology decisions at a glance
 - [profiles.md](architecture/profiles.md) — deployment profiles: the same components collapsed onto one box (standalone), spread across your own machines (private fleet), or extended into the hosted marketplace (deferred)
 - [design-review.md](architecture/design-review.md) — red-team self-critique: ranked findings, pre-build spikes, verdict
+- [external-review.md](architecture/external-review.md) — disposition record for the independent external review (Codex, 2026-07-07): endorsements, the 13 accepted-and-applied fixes, and accepted follow-up work
 
 ## Decisions
 
