@@ -39,6 +39,8 @@ Thirteen findings were accepted and applied as surgical doc edits. Each is resol
 | 11 | 15-minute headline honesty | Qualified: install-to-first-GPU-command < 15 min; first train/serve run additionally pulls multi-GB images/weights, bounded and cached ([self-host.md §1](../product/self-host.md)) |
 | 12 | Phase-1 golden-path scope creep | Narrowed to one golden path (loomd + loom-hostd + CLI, local artifact store, `loom data push`, `qlora-sft`, adapter checkpoint/resume, local vLLM deploy, 3 images); other recipes/images/ROCm/P2P/full-FT to Phase 2+ ([roadmap.md](../product/roadmap.md), notes in [recipes.md §3](../ml-lifecycle/recipes.md) and [environments.md §2](../ml-lifecycle/environments.md)) |
 | 13 | Raw-rsync-of-live-DB backup advice | Replaced with SQLite online backup (`VACUUM INTO`/`.backup`) via a planned `loom backup`/`loom restore` with verification; rsync retained for artifact/cache dirs ([self-host.md §6](../product/self-host.md)) |
+| 14 | In-memory-only SQLite testing | Store-conformance matrix and the chaos configuration of the simulated-fleet suite now run against **file-backed WAL** SQLite (the production configuration); `:memory:` reserved for pure-logic unit tests ([backend.md §9](../platform/backend.md)) |
+| 15 | Undefined migration rollback rules | Adopted an **N−1 schema-compatibility contract**: destructive migrations split across two releases, pre-upgrade snapshot before migrating, auto-rollback armed only while N−1 holds, forward-only migrations with the snapshot as the down path ([backend.md §4](../platform/backend.md), [self-host.md §6](../product/self-host.md)) |
 
 ## Accepted as follow-up work
 
