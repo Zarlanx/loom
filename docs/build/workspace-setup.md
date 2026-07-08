@@ -32,7 +32,12 @@ loom/                          # cargo workspace root
 │   ├── loom-hostd/            # BIN  the host agent
 │   └── loom/                  # BIN  the CLI (clap) — renter + host + admin verbs
 ├── migrations/                # shared sqlx migration set (dialect notes inline)
-└── xtask/                     # BIN  cargo-xtask helper (codegen, golden regen, migrate, images, release)
+├── xtask/                     # BIN  cargo-xtask helper (codegen, golden regen, migrate, images, release)
+├── proto/                     #      authoritative .proto sources (prost-build reads these)
+├── openapi.json               #      committed OpenAPI spec — the diff-gate's reference (§4)
+├── images/                    #      curated image definitions (base-cuda / train / serve-vllm) — PR-24
+├── python/loom-ckpt/          #      the checkpoint helper (Python pkg shipped in the train image) — NOT a crate
+└── scripts/                   #      install / release scripts (get.loom.dev installer, etc.)
 ```
 
 **lib vs bin, restated as the buildable fact PR-01 lands:**
@@ -234,14 +239,14 @@ A dependency lives in `[workspace.dependencies]` when **more than one crate uses
 
 ## 4. CI pipeline
 
-PR-01 stands up the jobs below; **every later PR must keep the required ones green**. The split is deliberate — the fast correctness gates block merge; the slow/hardware/image jobs run nightly or gated so they never bottleneck the merge queue.
+PR-01 stands up the *fast* gates (fmt/clippy/test) as required from day one; the contract and store gates are wired as jobs in PR-01 but **become required only when their owning PR lands** (a job cannot block merges before the code it checks exists — see the "Lands in / becomes required" column). The split is deliberate — the fast correctness gates block merge from the start; the contract/store gates flip to required as they gain teeth; the slow/hardware/image jobs run nightly or gated so they never bottleneck the merge queue.
 
 | Job | Gate | Lands in | Notes |
 |---|---|---|---|
 | **a. fmt** | required | PR-01 | `cargo fmt --all --check` |
 | **b. clippy** | required | PR-01 | `cargo clippy --all-targets --all-features -- -D warnings` |
 | **c. unit tests** | required | PR-01 | `cargo test --workspace` (pure `loom-core` + per-crate units) |
-| **d. store-conformance matrix** | required | PR-05 | SQLite **file-backed WAL** leg + Postgres service-container leg ([backend.md §9](../platform/backend.md#9-testing-strategy)) |
+| **d. store-conformance** | required from PR-05 | PR-05 | **Phase 1: SQLite file-backed WAL leg only.** The Postgres service-container leg is added when `PgStore` lands at marketplace scale (Phase 3) — it is *not* a Phase-1 gate, since the core is SQLite-only ([ADR-0013](../adr/0013-single-binary-self-host-control-plane.md), [backend.md §9](../platform/backend.md#9-testing-strategy)) |
 | **e. openapi-diff gate** | required | PR-04 | regenerate spec from handlers, diff against committed `openapi.json`; any drift fails ([backend.md §8](../platform/backend.md#8-api-surface-recap)) |
 | **f. proto golden-vector check** | required | PR-02 | re-verify checked-in `Envelope` byte vectors round-trip ([backend.md §9](../platform/backend.md#9-testing-strategy)) |
 | **g. build 3 images** | **nightly / gated** | PR-24 | reproducible builds of `base-cuda`/`train`/`serve-vllm`, digest-pinned, SBOM+scan ([README PR-24](./README.md#wave-4--self-host-hardening)) |
@@ -264,13 +269,10 @@ jobs:
   test:                                  # (c) required
     steps: [checkout, rust-toolchain, run: cargo test --workspace]
 
-  store-conformance:                     # (d) required — matrix
+  store-conformance:                     # (d) required from PR-05
     strategy:
       matrix:
-        backend: [sqlite-wal, postgres]
-    services:
-      postgres:                          # only used by the postgres leg
-        image: postgres:17
+        backend: [sqlite-wal]            # Phase 1 = SQLite only; add `postgres` at Phase 3 with PgStore
     steps:
       - run: xtask migrate --backend ${{ matrix.backend }}
       - run: cargo test -p loom-store --features conformance -- --backend ${{ matrix.backend }}
@@ -294,7 +296,7 @@ jobs:
     steps: [run: cargo test -p loomd --features gpu-smoke -- --ignored]
 ```
 
-The **required-to-merge** set is `fmt, clippy, test, store-conformance, openapi-diff, proto-golden`. The **nightly/gated** set is `images` (schedule) and `gpu-smoke` (needs a GPU runner). This matches [backend.md §9](../platform/backend.md#9-testing-strategy): the hardware-gated GPU suite is ground-truth, but it must never block a merge on a box without a GPU — the same skip-without-credentials discipline the [CLAUDE-level Mirror lesson](../platform/backend.md#9-testing-strategy) records.
+The **required-to-merge** set grows as owning PRs land: `fmt, clippy, test` from PR-01, then `store-conformance` (SQLite-WAL leg) from PR-05, `openapi-diff` from PR-11 (when handlers exist to generate from — scaffolded at PR-04), and `proto-golden` from PR-02. The **nightly/gated** set is `images` (schedule) and `gpu-smoke` (needs a GPU runner). This matches [backend.md §9](../platform/backend.md#9-testing-strategy): the hardware-gated GPU suite is ground-truth, but it must never block a merge on a box without a GPU — the same skip-without-credentials discipline the [CLAUDE-level Mirror lesson](../platform/backend.md#9-testing-strategy) records.
 
 ---
 
@@ -320,7 +322,7 @@ This is the **load-bearing culture section**. The through-line, carried directly
 
 - **Trait + fake in the same crate, behind a `test-support` feature.** Every seam (`Store`, `Bus`, `SandboxDriver`, the agent-gateway session, the vLLM engine) ships its fake **inside the crate that defines the trait**, gated on a `test-support` (or `testing`) cargo feature. So `loom-store` exports both `SqliteStore` and `FakeStore`; a downstream crate depends on `loom-store` with `features = ["test-support"]` in its `[dev-dependencies]` and gets the fake. Fakes are first-class, versioned, reviewed code — not per-test throwaway mocks re-implemented five times.
 
-- **Fakes are validated against the real impl via a shared conformance suite — never native-type mocks.** The `Store` trait has **one** conformance suite; it runs against `SqliteStore`, `PgStore`, *and* `FakeStore`. If a fake diverges from the real backend, the suite fails — that is the whole point. This is the concrete anti-pattern the Mirror lesson names: a fake built from native Python dicts that "passed" because it never met the real Convex contract. Here the fake must pass the *same* suite the real store passes, or it is not shipped.
+- **Fakes are validated against the real impl via a shared conformance suite — never native-type mocks.** The `Store` trait has **one** conformance suite; in Phase 1 it runs against `SqliteStore` *and* `FakeStore` (the `PgStore` leg joins at marketplace scale). If a fake diverges from the real backend, the suite fails — that is the whole point. This is the concrete anti-pattern the Mirror lesson names: a fake built from native Python dicts that "passed" because it never met the real Convex contract. Here the fake must pass the *same* suite the real store passes, or it is not shipped.
 
 - **File-backed WAL, not `:memory:`, for store tests.** The SQLite conformance leg runs against a **file-backed database in WAL mode** — the production configuration — because `:memory:` skips exactly the locking, WAL-checkpoint, and busy-timeout behavior that bites in production ([backend.md §9](../platform/backend.md#9-testing-strategy)). `:memory:` is reserved for pure-logic unit tests where persistence semantics are *not* under test.
 
