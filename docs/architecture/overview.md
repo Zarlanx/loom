@@ -23,7 +23,7 @@ This is the top-level map. It defines the actors, names every component, walks t
 
 **Relay network.** Hosts are behind NAT and never accept inbound connections, so Loom runs a DERP-style relay mesh: every session starts relayed through an operator-run relay server, and Loom attempts to upgrade to a direct **WireGuard** connection via NAT hole-punching whenever the two ends can reach each other. Relays are dumb pipes for end-to-end-encrypted ciphertext; they never see plaintext. This is the same architecture Tailscale uses in production — start relayed, upgrade to direct, fall back to relay under hard/symmetric NAT ([Tailscale connection types](https://tailscale.com/docs/reference/connection-types), [DERP servers](https://tailscale.com/docs/reference/derp-servers)). See [networking.md](../platform/networking.md).
 
-**Inference gateway.** The front door for serverless inference. It terminates the OpenAI-compatible API, authenticates and meters the caller, and — critically — **strips renter identity** before routing so the serving host receives an anonymized request. It picks a warm node with the model resident, proxies the streaming response, and performs **mid-stream failover**: if the serving node dies while emitting tokens, the gateway reissues the request to another node and continues the stream. See [serving.md](../ml-lifecycle/serving.md).
+**Inference gateway.** The front door for serverless inference. It terminates the OpenAI-compatible API, authenticates and meters the caller, and — critically — **strips renter identity** before routing so the serving host receives an anonymized request. It picks a warm node with the model resident, proxies the streaming response, and performs **mid-stream failover**: if the serving node dies while emitting tokens, the gateway re-dispatches to another warm node — by default a visible restart (the client sees a retry/restart event and a fresh stream), with seamless continuation only where reproducible decoding is proven. See [serving.md](../ml-lifecycle/serving.md).
 
 **Weight cache.** Model weights are large and residential upload is slow, so weights are content-addressed and distributed **peer-to-peer** between nodes: the gateway pre-places a model onto candidate nodes ahead of demand, and nodes fetch chunks from each other rather than all pulling from a central origin. The first-generation policy is **whole-model-per-node** — each serving node holds the entire model — because cross-node tensor/pipeline disaggregation (NVIDIA Dynamo-style) is unsuitable over residential links today. See [serving.md](../ml-lifecycle/serving.md).
 
@@ -86,16 +86,16 @@ sequenceDiagram
     GW-->>App: token stream...
     Note over NodeA: Node A dies mid-stream
     NodeA--xGW: connection drops
-    GW->>GW: detect failure, prefix already emitted
-    GW->>NodeB: re-issue (prefix-aware continuation)
-    NodeB-->>GW: token stream (continues)
-    GW-->>App: token stream (uninterrupted)
+    GW->>GW: detect failure, re-dispatch
+    GW->>NodeB: re-issue request
+    NodeB-->>GW: token stream (fresh generation)
+    GW-->>App: retry/restart event, then new token stream
     GW->>GW: settle usage across both nodes
 ```
 
 An application calls the OpenAI-compatible endpoint with an API key and `stream=true`. The gateway authenticates the caller, opens a metering record, and **strips renter identity** so nothing that reaches a host can attribute the request to a person or account — this identity-stripping is structural, the *primary* renter-from-host protection, not an add-on (see [security.md](../platform/security.md)). The gateway consults the node registry for a warm node with the requested model already resident (thanks to the weight cache's pre-placement), routes the anonymized request to Node A, and proxies tokens straight back to the caller as they arrive.
 
-Then Node A dies — someone opened a game, the machine slept, the residential link dropped. The gateway detects the broken connection, knows exactly which prefix it has already emitted to the client, and re-issues a prefix-aware continuation to Node B, which also holds the model. Tokens resume; from the caller's perspective the stream never broke. Usage is settled across both nodes for the segments each actually served. This is why the first-generation policy is **whole-model-per-node**: any warm node is a complete failover target, with no cross-node coordination on the critical path. Disaggregated serving would make every request depend on multiple flaky residential nodes staying up simultaneously — the opposite of what we want.
+Then Node A dies — someone opened a game, the machine slept, the residential link dropped. The gateway detects the broken connection and **re-dispatches the request to Node B**, which also holds the model. The honest default is a **visible restart**: the client receives a `retry-after-restart` event (keyed to an idempotent request ID) and then a fresh token stream from Node B — a well-behaved client replaces the partial with the final answer (for non-streaming calls the retry is invisible; the caller just gets the answer once). **Seamless mid-stream continuation is a narrow optimization** we enable only where the engine build + model + quant provably give reproducible seeded decoding on a compatible replica ([serving.md §3](../ml-lifecycle/serving.md)); where that isn't proven, we restart and say so rather than pretend the seam is invisible. Usage is settled across both nodes for the segments each actually served. This is why the first-generation policy is **whole-model-per-node**: any warm node is a complete failover target, with no cross-node coordination on the critical path. Disaggregated serving would make every request depend on multiple flaky residential nodes staying up simultaneously — the opposite of what we want.
 
 ## Technology decisions at a glance
 

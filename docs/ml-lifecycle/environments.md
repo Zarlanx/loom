@@ -28,6 +28,8 @@ The rest of this document is the mechanics of those four commitments.
 
 Images form a **layer graph**: each builds `FROM` the one above it, so the expensive CUDA base is shared and node-side caches dedupe hard (§6). Names follow `loom/<image>:<tag>` (§2.2).
 
+> **Phase 1 ships a subset.** The catalog below is the *target state*. The self-hostable core ([../product/roadmap.md](../product/roadmap.md) Phase 1) ships **3 images only** — `base-cuda`, `train`, `serve-vllm`. `serve-onnx`, `data`, `eval`, `notebook`, and all **ROCm** variants are Phase 2+.
+
 | Image | Builds on | Contents | Target workload |
 |---|---|---|---|
 | `base-cuda` | (distro base) | CUDA user-mode toolkit + cuDNN, Python 3.12, `uv`, minimal OS userland. **No PyTorch.** | Foundation for everything; direct use only for custom CUDA/C++ kernels. |
