@@ -20,3 +20,4 @@ This directory records the load-bearing architectural decisions behind Loom, a d
 | [0012](./0012-fixed-pricing-fiat-only.md) | Fixed ask pricing + 20% take + fiat only | Accepted |
 | [0013](./0013-single-binary-self-host-control-plane.md) | Single-binary self-host control plane; SQLite/in-proc default, Postgres/NATS optional | Accepted |
 | [0014](./0014-deployment-profiles-marketplace-optional.md) | Three deployment profiles; self-hostable core, marketplace optional and deferred | Accepted |
+| [0015](./0015-pluggable-compute-backends.md) | Pluggable compute backends: mlx \| cuda \| cpu \| rocm | Accepted 2026-07-08 |
