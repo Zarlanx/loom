@@ -158,6 +158,7 @@ message RotateCert { bytes csr_der = 1; }              // agent→gateway over a
 ```
 
 - **Direction:** `EnrollRequest`/`RotateCert` agent→gateway; `EnrollGrant`/`ReEnroll` gateway→agent.
+- **Backend capability ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).** Per [compute-backends.md](./compute-backends.md), `HardwareInventory` (in `EnrollRequest`) and `Heartbeat` gain **additive** backend-capability fields — `backends[]` (the enum subset the node can run: `mlx`/`cuda`/`cpu`/`rocm`), `memory_model` (e.g. unified vs. discrete VRAM), and per-backend runtime versions — which the scheduler filters placement on (backend.md §3). These are new fields, not a schema break: consistent with the additive protobuf-evolution rule (§2 "Schema evolution", §2.3), old agents simply omit them.
 - **Errors/retry:** an invalid/spent token → `JobReject`-style close with reason `enroll_token_invalid`; the agent surfaces it to the owner and does **not** retry automatically (a spent token is terminal). CSR signing failure is retriable with backoff. `RotateCert` before cert expiry is routine; a failed rotation keeps the old cert until it actually expires, then falls back to `ReEnroll`.
 
 ### (b) Presence & health

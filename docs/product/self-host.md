@@ -28,6 +28,8 @@ This is the whole "it shouldn't be huge files to set up" story, stated plainly: 
 
 The standalone profile is `loomd` as a **single Rust binary with embedded SQLite, an in-process job queue, an embedded inference gateway, and a local content-addressed artifact store** — no Postgres, no NATS, no MinIO, no relay ([../architecture/profiles.md](../architecture/profiles.md)). One process is the entire backend. `loom-hostd` runs alongside it to drive jobs on the local GPU. This is the "everything on one box" profile.
 
+> **On Apple silicon (e.g. an M3 Max), the flow below is identical** — same install, same `loom init --standalone`, same commands — but jobs run via the **process driver** (a plain host process, not a container) and the **MLX** compute backend rather than a CUDA container, since Metal has no Linux-container GPU path. See [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)). The transcripts here are written for the Linux/NVIDIA case (CUDA images, `nvidia-smi`); a macOS transcript follows later. Read the driver/backend/image references below as the Linux path.
+
 ### 2.1 Prerequisites & `loom doctor`
 
 Loom self-hosts on **Linux + NVIDIA** first (the same floor as the hosted fleet — [deployment.md](./deployment.md) §9). You need:

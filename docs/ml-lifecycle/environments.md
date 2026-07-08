@@ -4,6 +4,8 @@
 **Scope:** The curated runtime-image catalog and the compatibility story that makes it work on a heterogeneous consumer GPU fleet — what images we ship, how they're versioned and built, how a single image runs in both isolation tiers, and how we keep a fast-moving CUDA/ROCm/PyTorch matrix pinned and reproducible.
 **Out of scope (see other docs):** How images are *isolated* at runtime lives in [../platform/isolation.md](../platform/isolation.md); how the agent detects hardware and drives sandboxes lives in [../platform/host-agent.md](../platform/host-agent.md); how bytes (layers, weights) physically move to nodes lives in [../platform/networking.md](../platform/networking.md); training-specific and serving-specific stack choices live in [training.md](./training.md) and [serving.md](./serving.md).
 
+> **Backend scope (ADR-0015).** This doc is the authority for the **CUDA (Linux/OCI) backend's** runtime catalog — the OCI images, the driver-floor story, and the pinning discipline that make CUDA-on-Linux reproducible. The multi-backend model — the `mlx` | `cuda` | `cpu` | `rocm` capability enum, and the macOS **venv-bundle** runtimes that stand in for images on Apple silicon — lives in [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).
+
 ---
 
 ## 1. The compatibility problem, stated plainly
@@ -20,7 +22,7 @@ The naive answer — "let renters bring any Docker image" — multiplies these a
 3. **A tested driver range per image.** Each image declares the minimum host NVIDIA driver it needs, validated in CI, not guessed.
 4. **An agent-side driver floor enforced at enrollment.** A card whose host driver is below the floor of the images it would run is simply not offered for those images — the check happens before any job lands (see [../platform/host-agent.md](../platform/host-agent.md) §4).
 
-The rest of this document is the mechanics of those four commitments.
+The rest of this document is the mechanics of those four commitments — all of which describe the **CUDA backend**; on the macOS/MLX backend the same commitments are met by pinned `uv` **venv bundles** rather than OCI images (there is no host GPU driver to floor against on Apple silicon), per [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).
 
 ---
 

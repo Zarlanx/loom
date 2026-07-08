@@ -20,6 +20,7 @@ This is the design-phase documentation for Loom, a distributed GPU compute platf
 ## Platform (the compute fabric)
 
 - [backend.md](platform/backend.md) — backend engineering design: the `loomd`/`hostd` binaries, embedded SQLite core, single-binary self-host control plane, and where Postgres/NATS enter at marketplace scale
+- [compute-backends.md](platform/compute-backends.md) — pluggable compute backends: capability model, lazy runtimes, per-backend engines (mlx | cuda | cpu | rocm)
 - [host-agent.md](platform/host-agent.md) — the Rust daemon hosts install: lifecycle, metering, hardware attestation, idle-time policy
 - [isolation.md](platform/isolation.md) — sandboxing tiers: containers + nvidia-container-toolkit, gVisor/nvproxy, Cloud Hypervisor + VFIO microVMs
 - [control-plane.md](platform/control-plane.md) — scheduler, job lifecycle, state, billing metering pipeline

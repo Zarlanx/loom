@@ -2,7 +2,7 @@
 
 **A self-hostable GPU compute stack for ML — run the full lifecycle on your own GPUs.**
 
-Loom is the entire ML compute backend as a set of lightweight Rust binaries you deploy yourself: managed training recipes, data staging, evaluation, and OpenAI-compatible serving, running on one GPU box or across your own private fleet. SQLite is embedded, the control plane idles under 100MB, and a stranger can stand it up in minutes. A hosted GPU **marketplace** — renting idle GPUs from other people, with billing, payouts, and reputation — is a future, optional layer built on the same components; its development is deferred until the self-hostable core is proven.
+Loom is the entire ML compute backend as a set of lightweight Rust binaries you deploy yourself: managed training recipes, data staging, evaluation, and OpenAI-compatible serving, running on one GPU box or across your own private fleet. It runs ML on the stack you already own — Apple silicon (MLX), NVIDIA (CUDA), or plain CPU today, AMD (ROCm) later — behind a backend-agnostic core that loads only the runtime a job actually needs. SQLite is embedded, the control plane idles under 100MB, and a stranger can stand it up in minutes. A hosted GPU **marketplace** — renting idle GPUs from other people, with billing, payouts, and reputation — is a future, optional layer built on the same components; its development is deferred until the self-hostable core is proven.
 
 > **Status: design phase, refocused on self-host.** This repo currently contains the full design documentation. Implementation follows the [roadmap](docs/product/roadmap.md); see the [deployment profiles](docs/architecture/profiles.md) for how the same stack collapses onto one box or spreads across your fleet.
 
@@ -13,7 +13,7 @@ Managed ML platforms lock the training/eval/serving lifecycle behind someone els
 ## What it does
 
 - **Managed ML lifecycle on your own GPUs** — data processing, training, evaluation, and serving as first-class, documented workflows with Hugging Face integration throughout, running on hardware you control.
-- **Managed training recipes** — batch and interactive jobs with checkpoint-resume: PyTorch, Triton, CUDA and ROCm, fine-tuning with Unsloth/TRL, the full modern training stack in curated images.
+- **Managed training recipes** — batch and interactive jobs with checkpoint-resume, backend-polymorphic across the stack you own: CUDA (PyTorch/Triton, fine-tuning with Unsloth/TRL), Apple silicon (MLX / `mlx-lm`), and CPU (llama.cpp), with ROCm to follow — the full modern training stack behind one recipe contract.
 - **OpenAI-compatible serving** — an OpenAI-compatible API in front of your GPUs; models served with vLLM from a content-addressed weight cache, with mid-stream failover. Ships for self-hosters as an embedded gateway.
 - **Single-binary backend** — `loomd` control plane + `hostd` host agent as static Rust binaries, a few MB idle, embedded SQLite, outbound-only connections, strict sandboxing, per-second metering. See [backend engineering](docs/platform/backend.md) and [self-hosting](docs/product/self-host.md).
 - **Optional hosted marketplace (deferred)** — the same components, extended with billing, payouts, reputation, and a relay fleet, let you rent idle GPUs from strangers at a fraction of hyperscaler prices. Design of record; development parked until the core is proven.
@@ -25,8 +25,8 @@ The full design lives under [`docs/`](docs/README.md):
 | Section | Contents |
 |---|---|
 | [Architecture](docs/architecture/) | System overview, [deployment profiles](docs/architecture/profiles.md) (standalone / private fleet / marketplace), components, job lifecycle, red-team design review |
-| [ADRs](docs/adr/) | Architecture Decision Records — what was decided, why, and what it costs; includes [single-binary self-host control plane](docs/adr/0013-single-binary-self-host-control-plane.md) and [deployment profiles / marketplace-optional](docs/adr/0014-deployment-profiles-marketplace-optional.md) |
-| [Platform](docs/platform/) | [Backend engineering design](docs/platform/backend.md), host agent, isolation tiers, control plane, networking, security & trust model, wire protocol, renter API |
+| [ADRs](docs/adr/) | Architecture Decision Records — what was decided, why, and what it costs; includes [single-binary self-host control plane](docs/adr/0013-single-binary-self-host-control-plane.md), [deployment profiles / marketplace-optional](docs/adr/0014-deployment-profiles-marketplace-optional.md), and [pluggable compute backends](docs/adr/0015-pluggable-compute-backends.md) |
+| [Platform](docs/platform/) | [Backend engineering design](docs/platform/backend.md), [pluggable compute backends](docs/platform/compute-backends.md), host agent, isolation tiers, control plane, networking, security & trust model, wire protocol, renter API |
 | [ML lifecycle](docs/ml-lifecycle/) | Data, training, evaluation, serving, runtime environments, recipe catalog |
 | [Product](docs/product/) | [Self-hosting guide](docs/product/self-host.md), deployment & DX, roadmap, marketplace mechanics (hosted layer — deferred), unit economics (hosted layer — deferred) |
 

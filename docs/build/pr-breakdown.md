@@ -11,7 +11,7 @@ The [25+3 entries in the DAG](./README.md#3-the-authoritative-pr-dag) are **work
 5. **The one exception — never split a correctness invariant.** The lease/fencing rules (**PR-03b**) and the scheduler reconciliation loop (**PR-12**) land as **single coherent PRs even though they are the largest**, because splitting split-brain correctness across two PRs is exactly where the bug hides ([hard call #3](./README.md#1-the-five-hard-calls-read-this-before-the-table)). Smaller is the default; coherent-invariant beats smaller when they conflict.
 6. **Contracts split schema-from-harness.** The `.proto` and OpenAPI *schemas* are reviewed as a whole (additive-only afterward); the codegen/mock/diff *harness* is a separate PR.
 
-**Result: 66 small PRs across the 28 workstreams** (verified acyclic, no dangling deps). Measured in small PRs the critical path is longer than the 11-epic chain but the same *shape* — single-owned and sequential, width hiding behind it ([parallelization.md](./parallelization.md)): **12 sub-PRs to M1** (`01a→03a→03b→05a→05b→05c→26b→11a→11c→13a→13b→13c`), **16 to M3** (…`→16a→16b→16c→17c`), **17 to M4** (…`→22c`). One structural note the decomposition surfaces: at the sub-PR level `bootstrap-auth` (26b, via its dep on the `accounts`/`api_keys` schema `05c`, and `loomd`'s dep on it) sits *on* the critical path — a coupling the epic-level graph hid, and a reason to keep PR-26 lean. Notation below: **`id`** — scope · *dep: …* · gate.
+**Result: 70 small PRs across the 28 workstreams** (verified acyclic, no dangling deps; includes the four hardware-gated CUDA legs — 07c/07d runc, 17d, 18d, 19c — written in parallel per [ADR-0015](../adr/0015-pluggable-compute-backends.md) and dormant until NVIDIA hardware exists). Measured in small PRs the critical path is longer than the 11-epic chain but the same *shape* — single-owned and sequential, width hiding behind it ([parallelization.md](./parallelization.md)): **12 sub-PRs to M1** (`01a→03a→03b→05a→05b→05c→26b→11a→11c→13a→13b→13c`), **16 to M3** (…`→16a→16b→16c→17c`), **17 to M4** (…`→22c`) — and after the backend-first revision ([README §7](./README.md#7-backend-first-revision-2026-07-08-mlx-on-the-founders-metal)) every hardware step on that spine runs on the M3 Max (ProcessDriver + MLX), so GPU scarcity is off the critical path entirely. One structural note the decomposition surfaces: at the sub-PR level `bootstrap-auth` (26b, via its dep on the `accounts`/`api_keys` schema `05c`, and `loomd`'s dep on it) sits *on* the critical path — a coupling the epic-level graph hid, and a reason to keep PR-26 lean. Notation below: **`id`** — scope · *dep: …* · gate.
 
 ---
 
@@ -33,7 +33,7 @@ The [25+3 entries in the DAG](./README.md#3-the-authoritative-pr-dag) are **work
 - **04a** — Committed `openapi.json` + RFC 9457 error taxonomy · *dep: 01a* · gate: spec validates + lints
 - **04b** — Mock server + diff-gate scaffold (enforcing deferred to 11b) · *dep: 04a* · gate: mock answers golden-path routes
 
-## Wave 1 — Seams & Skeletons (16)
+## Wave 1 — Seams & Skeletons (17)
 
 **PR-05 `store-sqlite` → 3**
 - **05a** — `Store` trait + `FakeStore` + conformance-suite skeleton · *dep: 03b* · gate: fake passes the conformance skeleton
@@ -44,10 +44,11 @@ The [25+3 entries in the DAG](./README.md#3-the-authoritative-pr-dag) are **work
 - **06a** — `Bus` trait + `InProcBus` + delivery tests · *dep: 03a* · gate: at-least-once + reconcile-from-store
 - **06b** — Outbox relay task · *dep: 06a, 05b* · gate: relay drains outbox rows
 
-**PR-07 `sandbox-runc` → 3**
+**PR-07 `sandbox-drivers` → 4** *(revised per [ADR-0015](../adr/0015-pluggable-compute-backends.md): ProcessDriver first — it's the only driver the M3 Max can run and the only path to Metal)*
 - **07a** — `SandboxDriver` trait + `FakeDriver` (CI-without-root) · *dep: 01a* · gate: fake runs a scripted job
-- **07b** — `RuncDriver` run + teardown · *dep: 07a* · gate: `echo` runs in a container; clean teardown
-- **07c** — Hardening: seccomp, dropped caps, cgroup v2, default-deny egress netns · *dep: 07b* · gate: egress-deny + no-RFC1918 tests
+- **07b** — `ProcessDriver` (macOS/dev): host child process, cwd/env scoping, kill-tree teardown; **no isolation — trusted profile only** · *dep: 07a* · gate: `echo` runs as a supervised process on macOS; clean teardown
+- **07c** — `RuncDriver` run + teardown (Linux; off the spine, verified on Linux CI) · *dep: 07a* · gate: `echo` runs in a container; clean teardown
+- **07d** — Hardening: seccomp, dropped caps, cgroup v2, default-deny egress netns · *dep: 07c* · gate: egress-deny + no-RFC1918 tests
 
 **PR-08 `hostd-skeleton` → 3**
 - **08a** — Config + control-channel client (WSS) + connect/reconnect/backoff · *dep: 02b* · gate: connects+reconnects to a fake gateway
@@ -76,9 +77,9 @@ The [25+3 entries in the DAG](./README.md#3-the-authoritative-pr-dag) are **work
 **PR-13 `tracer-bullet` · M1 → 3**
 - **13a** — `loom run -- echo hi`: CLI → real API → SQLite → scheduler → **fake** agent + **fake** sandbox · *dep: 10b, 11c, 12, 07a* · gate: echo job reaches `Succeeded` (all fakes)
 - **13b** — Swap in real agent protocol + `loom-hostd` over loopback · *dep: 13a, 08c* · gate: same demo, real protocol
-- **13c** — Swap in real `runc` + minimal single-job log return · *dep: 13b, 07c* · gate: same demo, real container — **M1 closed**
+- **13c** — Swap in the real driver + minimal single-job log return: **ProcessDriver on macOS** (the M3 is the dev box) · *dep: 13b, 07b* · gate: same demo, real process on real metal — **M1 closed**. *(The runc leg re-runs this tracer in Linux CI once 07d lands — a follow-up gate, not an M1 blocker.)*
 
-## Wave 3 — Verticals (17)
+## Wave 3 — Verticals (20)
 
 **PR-14 `artifact-store` → 2**
 - **14a** — Content-addressed on-disk store (put/get by digest) · *dep: 11a* · gate: digest round-trip
@@ -88,24 +89,27 @@ The [25+3 entries in the DAG](./README.md#3-the-authoritative-pr-dag) are **work
 - **15a** — Manifest + chunking + upload to artifact store · *dep: 14a* · gate: push produces a manifest
 - **15b** — Node prefetch + `name@vN` refs + `loom data push` · *dep: 15a, 10a* · gate: warm re-run is a cache hit
 
-**PR-16 `gpu-execution` → 3**
-- **16a** — NVML inventory + driver-floor enrollment gate · *dep: 13c* · gate: old-driver card refused; specs reported
-- **16b** — GPU injection into the sandbox (nvidia-container-toolkit) · *dep: 16a, 07c* · gate: a real CUDA job sees the GPU
-- **16c** — Hardware-gated GPU smoke suite · *dep: 16b* · gate: passes on a GPU runner; skips cleanly without
+**PR-16 `backend-capability` → 3** *(revised: generalized from NVML/CUDA-only to the [capability model](../platform/compute-backends.md))*
+- **16a** — Capability detection + advertising: backends[] (mlx/cuda/cpu/rocm), memory model (unified vs VRAM), per-backend versions (Metal/macOS probe on Apple silicon; NVML when present) + the scheduler's backend filter + driver-floor gates · *dep: 13c* · gate: the M3 advertises `(process, [mlx, cpu], unified-48GB)`; a below-floor node is refused; jobs with `backend: mlx` only match mlx nodes
+- **16b** — MLX runtime bootstrap: venv-bundle fetch/verify/cache + a real Metal job (a small `mlx` compute check) via ProcessDriver · *dep: 16a, 07b* · gate: a real MLX job runs on the M3's GPU; second run hits the bundle cache
+- **16c** — Per-backend hardware-gated smoke suites: macOS/MLX leg live (runs on the M3); CUDA leg written but dormant (GPU injection via nvidia-container-toolkit, activates when NVIDIA hardware exists) · *dep: 16b* · gate: MLX smoke passes on Apple silicon; CUDA suite skips cleanly everywhere else
 
 **PR-17 `checkpoint-resume` · M3 → 3**
 - **17a** — Checkpoint state/protocol + fencing on the fake fleet · *dep: 12, 14a* · gate: kill+resume on fakes; fence increments
 - **17b** — Artifact checkpoint I/O + **CPU-only deterministic `loom-ckpt` fixture** · *dep: 17a, 14b* · gate: RNG/exact-step restore proven with no GPU
-- **17c** — Real-GPU HF-Trainer resume · *dep: 17b, 16c* · gate: a real fine-tune survives a killed process — **M3 exit**
+- **17c** — Real-metal **mlx-lm LoRA resume** on the M3 · *dep: 17b, 16c* · gate: a real MLX fine-tune survives a killed process and resumes to completion — **M3 exit**
+- **17d** — CUDA/HF-Trainer resume (written in parallel, hardware-gated dormant until NVIDIA hardware) · *dep: 17c* · gate: same drill on a CUDA node; skips cleanly without one
 
-**PR-18 `qlora-recipe` → 3**
-- **18a** — `train` image + `qlora-sft` recipe manifest/config schema · *dep: 16b* · gate: image builds; schema validates
-- **18b** — VRAM/cost estimator + `loom train` · *dep: 18a* · gate: `--dry-run` prints a bounded estimate
-- **18c** — Real `qlora-sft` run → adapter + lineage record · *dep: 18b* · gate: adapter + lineage produced
+**PR-18 `qlora-recipe` → 4** *(revised: the recipe is backend-polymorphic per ADR-0015; MLX leg verified first)*
+- **18a** — `qlora-sft` recipe manifest/config schema with the `backends:` map + the **MLX runtime bundle** (mlx-lm) · *dep: 16b* · gate: bundle materializes; schema validates
+- **18b** — Memory/cost estimator (unified-memory aware) + `loom train` · *dep: 18a* · gate: `--dry-run` prints a bounded estimate on the M3
+- **18c** — Real `qlora-sft` run on MLX → adapter + lineage record (backend-tagged) · *dep: 18b* · gate: adapter + lineage produced on the M3
+- **18d** — CUDA leg (TRL/bitsandbytes impl + `train` image wiring; written in parallel, hardware-gated) · *dep: 18a, 24b* · gate: same contract passes on a CUDA node; skips cleanly without one
 
-**PR-19 `serve-vllm` → 2**
-- **19a** — `serve-vllm` image + gateway SSE proxy + replica table · *dep: 13c, 16b* · gate: streams tokens from a real replica
-- **19b** — `loom deploy adapter:` + restart-visible failover · *dep: 19a, 18c* · gate: deploy PR-18 adapter; killed replica → visible restart
+**PR-19 `serve` → 3** *(revised: one gateway, per-backend engines; MLX engine first)*
+- **19a** — Gateway SSE proxy + replica table + the **MLX serving engine** (per [compute-backends.md](../platform/compute-backends.md)'s engine pick) · *dep: 13c, 16b* · gate: streams tokens from a real MLX replica on the M3
+- **19b** — `loom deploy adapter:` + restart-visible failover (same-backend replicas) · *dep: 19a, 18c* · gate: deploy the PR-18 adapter; killed replica → visible restart
+- **19c** — vLLM/CUDA engine (written in parallel, hardware-gated) · *dep: 19a, 24c* · gate: same surface on a CUDA node; skips cleanly without one
 
 **PR-20 `logs-ps-top` → 2**
 - **20a** — SSE log streaming + resume token + `loom logs` · *dep: 13c* · gate: logs stream with resume
@@ -126,10 +130,10 @@ The [25+3 entries in the DAG](./README.md#3-the-authoritative-pr-dag) are **work
 - **23a** — `loom backup`/`restore` (`VACUUM INTO` + verify) · *dep: 05b, 11a* · gate: backup→restore round-trip verified
 - **23b** — Staged `loomd upgrade` + auto-rollback + N−1 migration contract · *dep: 23a* · gate: crash-looping upgrade auto-rolls-back
 
-**PR-24 `image-pipeline` → 3**
-- **24a** — `base-cuda` reproducible build + digest pinning · *dep: 01b* · gate: reproducible; pinned by digest
-- **24b** — `train` image · *dep: 24a* · gate: builds; used by PR-18
-- **24c** — `serve-vllm` image + SBOM + scan in CI · *dep: 24a* · gate: builds; scanned clean
+**PR-24 `runtime-pipeline` → 3** *(revised: builds both runtime artifact kinds; CUDA images still build in CI — only running them needs a GPU)*
+- **24a** — **venv-bundle pipeline** (macOS/MLX runtime): lockfile-pinned, content-addressed bundle build + verify · *dep: 01b* · gate: the mlx-lm bundle builds reproducibly; digest-pinned
+- **24b** — `base-cuda` + `train` OCI images, reproducible + digest-pinned · *dep: 01b* · gate: build reproducibly in CI
+- **24c** — `serve-vllm` image + SBOM + scanning for all runtime artifacts · *dep: 24a, 24b* · gate: builds; scanned clean
 
 **PR-25 `observability` → 2**
 - **25a** — `tracing` spans across crates · *dep: 11a* · gate: one job → coherent trace

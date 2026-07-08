@@ -220,3 +220,21 @@ A second independent Codex pass reviewed the PR split, ordering, and feature-sta
 **Corrected critical path.** Adding PR-26 does not lengthen the path to M3 (it sits at the same depth as PR-06, both feeding PR-09): the floor to **M3 (PR-17)** remains **ten PRs** — `PR-01 → PR-03 → PR-05 → PR-06/PR-26 → PR-09 → PR-11 → PR-12 → PR-13 → PR-16 → PR-17`. But Codex is right that Phase 1 does not *end* at M3: **M4's PR-22 depends on PR-17**, so full Phase-1 completion is one longer — `… → PR-17 → PR-22` (eleven). The two roadmap exit criteria are M3 *and* M4, so the honest delivery floor is the eleven-PR chain through PR-22, not the ten-PR chain to PR-17. [parallelization.md §3](./parallelization.md#3-the-critical-path-is-the-floor) and [milestones.md](./milestones.md) are updated to match.
 
 **Phase-1 is SQLite-only, stated once and for all.** `PgStore` and the Postgres CI conformance leg are Phase-3 (marketplace-scale) work, not Phase 1 — see the PR-05 scope above and the [corrected CI matrix](./workspace-setup.md). Any doc implying Postgres in the core has been corrected.
+
+---
+
+## 7. Backend-first revision (2026-07-08): MLX on the founder's metal
+
+[ADR-0015](../adr/0015-pluggable-compute-backends.md) made compute backends pluggable (**mlx | cuda | cpu | rocm**, priority MLX → CUDA → CPU), and the only development hardware for now is an **M3 Max MacBook (48GB)**. That re-anchors the plan: **the first verified vertical is MLX on macOS via a `ProcessDriver`**, not CUDA on Linux via runc. The CUDA path is *written in parallel* behind the same traits and stays hardware-gated until an NVIDIA box exists — its docs, images, and code all remain valid; only its *verification* waits. Design detail: [compute-backends.md](../platform/compute-backends.md).
+
+**What changes in the workstreams** (sub-PR detail in [pr-breakdown.md](./pr-breakdown.md)):
+
+- **PR-07 sandbox** — the first *real* driver is now **07b `ProcessDriver`** (macOS host process; no isolation, trusted-profile only, the only path to Metal). Runc lands as 07c and hardening as 07d, developed in parallel and verified on Linux CI runners — off the spine.
+- **PR-13 walking skeleton** — M1's real-driver landing (13c) closes with the **ProcessDriver on macOS**; the runc leg re-runs the same tracer in Linux CI when 07c/07d land (a follow-up gate, not an M1 blocker).
+- **PR-16 → `backend-capability`** — 16a becomes generalized capability detection (backends[], unified-vs-VRAM memory model; Metal/macOS probing on Apple silicon, NVML when present) + the scheduler's backend filter; 16b becomes the **MLX runtime bootstrap** (venv-bundle fetch + a real Metal job on the M3); 16c is the per-backend hardware-gated smoke suite (macOS leg live on the M3; CUDA leg dormant until hardware).
+- **PR-17 checkpoint-resume** — 17c (the M3 exit criterion) becomes an **mlx-lm LoRA resume on the M3**; a new gated 17d covers CUDA/HF-Trainer resume later. The headline Phase-1 risk is now provable on hardware we actually have.
+- **PR-18 qlora-sft** — the recipe contract is backend-polymorphic (ADR-0015): 18a–c implement and verify the **MLX (`mlx-lm`) leg**; a new gated 18d carries the CUDA (TRL/bitsandbytes) leg, written in parallel per [training.md](../ml-lifecycle/training.md).
+- **PR-19 serving** — 19a's first engine is the **MLX server engine** behind the unchanged OpenAI gateway; a new gated 19c adds vLLM/CUDA. Failover stays within same-backend replicas.
+- **PR-24 runtime pipeline** — 24a becomes the **venv-bundle build pipeline** (the macOS/MLX runtime artifact); 24b/24c still build + scan the CUDA OCI images in CI (image *builds* need no GPU — only running them does).
+
+**What deliberately does not change:** the spine's shape and ownership, the contracts, the store/bus/scheduler work, the sizing rule, and every gate that never needed a GPU. One honest new caveat: **M4's fleet-resume drill (22c) needs a second machine** — any second box (another Mac or a Linux node) satisfies it, but with exactly one MacBook it stays open until then; everything else in M4 (TLS, backup, serve) closes on the M3 alone. Net effect on risk: the GPU-scarcity risk *leaves the critical path entirely* — the spine's GPU is the laptop it's being built on.

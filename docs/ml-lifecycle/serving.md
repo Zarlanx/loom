@@ -6,6 +6,8 @@ It does not own transport (WireGuard/DERP — see [networking.md](../platform/ne
 
 The defining constraint, repeated so it stays load-bearing: **supply is other people's daily-driver GPUs behind residential NAT that die a lot.** Every decision below flows from "any warm node can vanish at any moment, and residential upload is slow."
 
+> **Backend scope (ADR-0015).** The engine stack described here (vLLM) is the **CUDA backend's** implementation of serving. The gateway keeps one OpenAI-compatible surface across backend-polymorphic engines — MLX: `mlx-lm` server; CPU: llama.cpp — and does not know which engine answered; that contract lives in [../platform/compute-backends.md](../platform/compute-backends.md) ([ADR-0015](../adr/0015-pluggable-compute-backends.md)).
+
 ## 1. Product shapes
 
 Loom sells three serving shapes over one gateway.
