@@ -12,9 +12,17 @@ repository.workspace   = true
 workspace = true
 
 [dependencies]
-loom-core.workspace  = true
-loom-store.workspace = true
+loom-core.workspace   = true
+loom-store.workspace  = true
+async-trait.workspace = true
+thiserror.workspace   = true
+tokio.workspace       = true
+tracing.workspace     = true
+
+[dev-dependencies]
+# the relay/reconcile tests drive the real Store seam through its in-crate fake
+loom-store = { workspace = true, features = ["test-support"] }
 
 [features]
+# fakes ship inside the crate that defines the trait (workspace-setup.md §6)
 test-support = []
-

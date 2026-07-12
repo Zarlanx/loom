@@ -1,6 +1,6 @@
 [package]
 name        = "loom-sandbox"
-description = "SandboxDriver trait + drivers: ProcessDriver (macOS/MLX), hardened runc (PR-07)"
+description = "SandboxDriver trait + drivers: FakeDriver (test-support), ProcessDriver (macOS/MLX) — PR-07"
 publish     = false
 version.workspace      = true
 edition.workspace      = true
@@ -9,8 +9,10 @@ license.workspace      = true
 repository.workspace   = true
 
 # Own lints table (cannot partially override an inherited one): identical to the
-# workspace set EXCEPT unsafe_code, relaxed forbid->deny — the seccomp/cgroup/netns
-# FFI needs `unsafe`, reviewed per use (workspace-setup.md §2).
+# workspace set EXCEPT unsafe_code, relaxed forbid->deny — the ProcessDriver's
+# unix signal delivery (kill-tree teardown) needs a reviewed `unsafe` FFI call,
+# and the runc hardening (07c/07d) will need seccomp/cgroup/netns FFI
+# (workspace-setup.md §2).
 [lints.rust]
 warnings    = { level = "deny", priority = -1 }
 unsafe_code = "deny"
@@ -21,5 +23,19 @@ all         = { level = "deny", priority = -1 }
 pedantic    = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 
+[dependencies]
+# dyn-safe async trait methods so a host agent can hold a `Box<dyn SandboxDriver>`
+async-trait.workspace = true
+# typed library errors (thiserror in libs)
+thiserror.workspace   = true
+
+[dev-dependencies]
+# `#[tokio::test]` harness that drives the async lifecycle conformance suite
+tokio.workspace = true
+
 [features]
+# the FakeDriver ships inside the crate that defines the trait (workspace-setup.md §6)
 test-support = []
+# the shared lifecycle conformance suite every driver must pass (CI-without-root
+# on the fake; the same suite re-runs against the real ProcessDriver)
+conformance  = []
