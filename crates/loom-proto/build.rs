@@ -17,10 +17,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join("..")
         .join("proto");
 
-    // Root `.proto` files to compile. Imports are resolved from `proto_root`, so a file
-    // that imports another need not be listed twice, but listing them explicitly keeps
-    // the codegen inputs auditable.
-    let files = [proto_root.join("loom/v1/envelope.proto")];
+    // The `.proto` files to compile. Imports are resolved from `proto_root`; listing every
+    // file explicitly (rather than relying on import discovery) keeps the codegen inputs
+    // auditable.
+    let files = [
+        proto_root.join("loom/v1/common.proto"),
+        proto_root.join("loom/v1/enrollment.proto"),
+        proto_root.join("loom/v1/health.proto"),
+        proto_root.join("loom/v1/job.proto"),
+        proto_root.join("loom/v1/log.proto"),
+        proto_root.join("loom/v1/envelope.proto"),
+    ];
 
     // The per-file directives below track edits to the listed sources. The
     // directory-level watch is deliberately kept *as well*: it is the only thing

@@ -106,3 +106,48 @@ fn vectors_survive_framing() {
         assert_eq!(wss_payload, vector.bytes.as_slice());
     }
 }
+
+/// PR-02b gate: a message a fake agent frames onto the wire is decoded to a byte- and
+/// value-identical message on the server side — the two sides of the wire, compiled from
+/// one schema, agree.
+#[test]
+fn fake_agent_and_server_decode_identical_bytes() {
+    use loom_proto::Body;
+    use loom_proto::v1::JobAccept;
+
+    // Agent side: build a JobAccept, wrap it in an Envelope, frame it for the WSS
+    // control channel.
+    let agent_view = Envelope {
+        protocol_version: 1,
+        msg_id: "0000000000000000000000AGENT".to_string(),
+        correlation_id: "0000000000000000000000OFFER".to_string(),
+        timestamp_ms: 1_700_000_000_000,
+        body: Some(Body::JobAccept(JobAccept {
+            attempt_id: "00000000000000000000ATTEMPT".to_string(),
+        })),
+    };
+    let on_wire = codec::wss_frame(Channel::Control, &agent_view).expect("agent frames message");
+
+    // Server side: deframe on the control channel, decode the payload, and confirm both
+    // the decoded value and its re-encoded bytes match what the agent sent.
+    let (channel, payload, rest) = codec::decode_wss_frame(&on_wire).expect("server deframes");
+    assert_eq!(channel, Channel::Control);
+    assert!(rest.is_empty());
+    let server_view: Envelope = codec::decode_message(payload).expect("server decodes envelope");
+
+    assert_eq!(
+        server_view, agent_view,
+        "server decoded a different message"
+    );
+    assert_eq!(
+        server_view.encode_to_vec(),
+        agent_view.encode_to_vec(),
+        "server re-encoded different bytes"
+    );
+    match server_view.body {
+        Some(Body::JobAccept(accept)) => {
+            assert_eq!(accept.attempt_id, "00000000000000000000ATTEMPT");
+        }
+        other => panic!("expected a JobAccept body, got {other:?}"),
+    }
+}
