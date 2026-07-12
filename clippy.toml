@@ -1,0 +1,5 @@
+avoid-breaking-exported-api = false
+disallowed-methods = [
+    # force the deterministic-time discipline: no wall-clock reads in loom-core
+    { path = "std::time::SystemTime::now", reason = "inject a clock; loom-core is pure (backend.md §1)" },
+]

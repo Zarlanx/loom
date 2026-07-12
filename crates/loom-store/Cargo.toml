@@ -1,0 +1,21 @@
+[package]
+name        = "loom-store"
+description = "Store trait + SqliteStore (sqlx) — SQLite-only in Phase 1 (PR-05)"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-core.workspace = true
+
+[features]
+# fakes ship inside the crate that defines the trait (workspace-setup.md §6)
+test-support = []
+# the shared Store conformance suite (CI job d, gains teeth at PR-05)
+conformance  = []
+

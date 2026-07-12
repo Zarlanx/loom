@@ -1,0 +1,65 @@
+# Loom workspace root — PR-01 `workspace-scaffold`.
+# Layout: docs/platform/backend.md §1 · operationalized in docs/build/workspace-setup.md.
+
+[workspace]
+resolver = "3"
+members = [
+    "crates/loom-proto",
+    "crates/loom-core",
+    "crates/loom-store",
+    "crates/loom-bus",
+    "crates/loom-gateway",
+    "crates/loom-sandbox",
+    "crates/loom-agentproto",
+    "crates/loomd",
+    "crates/loom-hostd",
+    "crates/loom",
+    "xtask",
+]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.89"          # MSRV == pinned stable (workspace-setup.md §2)
+license      = "Apache-2.0"
+repository   = "https://github.com/Zarlanx/loom"
+
+# Every version pin lives here once; crate Cargo.tomls say `tokio.workspace = true`.
+# Pin policy table: workspace-setup.md §3.
+[workspace.dependencies]
+tokio             = { version = "=1.47", features = ["rt-multi-thread", "macros", "sync", "time", "process", "signal"] }
+axum              = { version = "=0.8", features = ["macros", "json"] }
+sqlx              = { version = "=0.9", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+quinn             = "=0.11"
+rustls            = { version = "=0.23", default-features = false, features = ["aws-lc-rs"] }
+tokio-tungstenite = { version = "=0.24", features = ["rustls-tls-native-roots"] }
+prost             = "=0.13"
+prost-build       = "=0.13"
+serde             = { version = "1", features = ["derive"] }
+serde_json        = "1"
+toml              = "0.8"
+clap              = { version = "=4.5", features = ["derive", "env"] }
+utoipa            = { version = "=5", features = ["axum_extras"] }
+utoipa-axum       = "=0.2"
+tracing           = "0.1"
+tracing-subscriber = { version = "=0.3", features = ["env-filter", "json"] }
+thiserror         = "2"
+anyhow            = "1"
+# internal crates referenced by path so intra-workspace edges are explicit:
+loom-proto      = { path = "crates/loom-proto" }
+loom-core       = { path = "crates/loom-core" }
+loom-store      = { path = "crates/loom-store" }
+loom-bus        = { path = "crates/loom-bus" }
+loom-gateway    = { path = "crates/loom-gateway" }
+loom-sandbox    = { path = "crates/loom-sandbox" }
+loom-agentproto = { path = "crates/loom-agentproto" }
+
+[workspace.lints.rust]
+warnings    = { level = "deny", priority = -1 }   # #![deny(warnings)] posture, workspace-wide (§2)
+unsafe_code = "forbid"    # relaxed to "deny" only in loom-sandbox (documented, per-crate — see its Cargo.toml)
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all         = { level = "deny", priority = -1 }
+pedantic    = { level = "warn", priority = -1 }
+unwrap_used = "deny"      # panics-on-unwrap are a review failure, not a runtime surprise

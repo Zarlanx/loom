@@ -1,0 +1,5 @@
+# Pinned stable — bump deliberately, in its own PR (docs/build/workspace-setup.md §2).
+[toolchain]
+channel    = "1.89.0"
+components = ["rustfmt", "clippy"]
+profile    = "minimal"
