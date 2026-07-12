@@ -5,14 +5,17 @@ syntax = "proto3";
 
 package loom.v1;
 
+import "loom/v1/enrollment.proto";
+import "loom/v1/health.proto";
+import "loom/v1/job.proto";
+import "loom/v1/log.proto";
+
 // Envelope wraps every wire message (agent-protocol.md §2.2). Every frame on the
 // control/heartbeat/log/metering streams carries exactly one Envelope.
 //
-// PR-02a freezes the header fields and the length-prefix framing (codec.rs). The
-// `oneof body` of concrete message variants is added additively in PR-02b — an
-// Envelope with no body encodes to the same bytes whether or not the oneof exists
-// in the schema, which is exactly the additive-evolution property this contract
-// relies on (agent-protocol.md §2.3).
+// The `oneof body` carries the M1 message set only. Field numbers match the catalog in
+// agent-protocol.md §2.2 exactly, so the deferred message families slot into their
+// reserved numbers additively — never a renumbering (§2.3).
 message Envelope {
   // Semver-major of the message schema (agent-protocol.md §2.3). Minor/patch changes
   // are additive fields and require no bump.
@@ -25,5 +28,35 @@ message Envelope {
   // durations derive from monotonic counters, never wall-clock deltas (agent-protocol.md §3b).
   int64 timestamp_ms = 4;
 
-  // Field numbers 10-83 are the concrete message `oneof body`, frozen in PR-02b.
+  // Body field numbers deliberately NOT frozen in M1, reserved so a later PR adds them
+  // additively at their catalog number (agent-protocol.md §2.2):
+  //   35, 36   checkpoint  (JobCheckpointRequest / JobCheckpointed)          — PR-17
+  //   40..43   serving     (ReplicaPlace / ReplicaReady / ReplicaDrain / …)  — PR-19
+  //   51       artifacts   (ArtifactUploadGrant)                             — PR-14
+  //   60, 61   metering    (UsageRecord / UsageAck)                          — PR-27
+  //   70       attestation (AttestationQuote, Tier C)                        — security §6
+  //   80..83   agent ops   (UpdateAvailable / UpdateApplied / ConfigPush / Drain)
+  reserved 35, 36, 40, 41, 42, 43, 51, 60, 61, 70, 80, 81, 82, 83;
+
+  oneof body {
+    // enrollment & identity
+    EnrollRequest enroll_request = 10;
+    EnrollGrant enroll_grant = 11;
+    ReEnroll re_enroll = 12;
+    RotateCert rotate_cert = 13;
+    // presence & health
+    Heartbeat heartbeat = 20;
+    StateReport state_report = 21;
+    // job lifecycle (checkpoint 35/36 reserved above)
+    JobOffer job_offer = 30;
+    JobAccept job_accept = 31;
+    JobReject job_reject = 32;
+    JobPrepareProgress job_prepare_progress = 33;
+    JobStarted job_started = 34;
+    JobCompleted job_completed = 37;
+    JobFailed job_failed = 38;
+    JobAbort job_abort = 39;
+    // logs
+    LogChunk log_chunk = 50;
+  }
 }
