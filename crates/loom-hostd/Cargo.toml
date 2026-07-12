@@ -11,8 +11,40 @@ repository.workspace   = true
 [lints]
 workspace = true
 
+# The crate is a thin binary over an embeddable library (workspace-setup.md §1): all
+# behaviour lives in the lib so an in-process test boots the agent without sockets.
+[lib]
+name = "loom_hostd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "loom-hostd"
+path = "src/main.rs"
+
+[features]
+# `test-support` exposes the in-crate fake gateway + duplex connector so a downstream
+# integration test can enroll/heartbeat against a real WSS session with no real network
+# (workspace-setup.md §6: trait + fake in the same crate, behind a feature).
+test-support = []
+
 [dependencies]
 loom-proto.workspace   = true
 loom-core.workspace    = true
 loom-sandbox.workspace = true
+# `io-util` (duplex + AsyncRead/Write ext) is added on top of the workspace tokio feature
+# set for this crate only, so the shared pin is untouched.
+tokio             = { workspace = true, features = ["io-util"] }
+tokio-tungstenite.workspace = true
+futures-util.workspace      = true
+serde.workspace             = true
+serde_json.workspace        = true
+toml.workspace              = true
+thiserror.workspace         = true
+tracing.workspace           = true
+tracing-subscriber.workspace = true
+anyhow.workspace            = true
 
+[dev-dependencies]
+# Depend on self with `test-support` so `cargo test -p loom-hostd` (without
+# --all-features) still compiles the integration tests that use the fake gateway.
+loom-hostd = { path = ".", features = ["test-support"] }

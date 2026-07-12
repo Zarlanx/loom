@@ -107,6 +107,19 @@ impl FenceToken {
     pub const fn value(self) -> u64 {
         self.0
     }
+
+    /// Reconstructs a fence token from a persisted raw value.
+    ///
+    /// This is the deserialization inverse of [`value`](Self::value): the storage
+    /// layer uses it to rehydrate a lease/attempt read back from the database.
+    /// *Minting* new fences remains the sole responsibility of
+    /// [`LeaseBook`](crate::LeaseBook) — this constructor never advances the
+    /// monotonic counter and must not be used to fabricate a fence in scheduling
+    /// logic.
+    #[must_use]
+    pub const fn from_persisted(value: u64) -> Self {
+        Self(value)
+    }
 }
 
 impl fmt::Display for FenceToken {
@@ -127,6 +140,17 @@ impl AttemptNo {
     #[must_use]
     pub const fn get(self) -> u32 {
         self.0
+    }
+
+    /// Reconstructs an attempt number from a persisted raw value.
+    ///
+    /// The deserialization inverse of [`get`](Self::get), used by the storage
+    /// layer to rehydrate an attempt read back from the database. New attempt
+    /// numbers are produced by [`next`](Self::next); this must not be used to
+    /// skip the monotone sequence in scheduling logic.
+    #[must_use]
+    pub const fn from_persisted(value: u32) -> Self {
+        Self(value)
     }
 
     /// Returns the next attempt number.
@@ -174,10 +198,24 @@ mod tests {
     }
 
     #[test]
+    fn fence_token_round_trips_through_a_persisted_value() {
+        // The storage layer rehydrates a fence via `from_persisted`; it must be
+        // the exact inverse of `value`, and never mint a fresh counter.
+        assert_eq!(FenceToken::from_persisted(42).value(), 42);
+        assert_eq!(FenceToken::from_persisted(42), FenceToken(42));
+    }
+
+    #[test]
     fn attempt_numbers_increment() {
         assert_eq!(AttemptNo::FIRST, AttemptNo(1));
         assert_eq!(AttemptNo(1).next(), AttemptNo(2));
         assert_eq!(AttemptNo(3).get(), 3);
+    }
+
+    #[test]
+    fn attempt_no_round_trips_through_a_persisted_value() {
+        assert_eq!(AttemptNo::from_persisted(3).get(), 3);
+        assert_eq!(AttemptNo::from_persisted(3), AttemptNo(3));
     }
 
     #[test]
