@@ -33,4 +33,4 @@ pub mod v1 {
     include!(concat!(env!("OUT_DIR"), "/loom.v1.rs"));
 }
 
-pub use v1::Envelope;
+pub use v1::{Envelope, envelope::Body};

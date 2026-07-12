@@ -226,6 +226,7 @@ mod tests {
             msg_id: "01J0000000000000000000CODE".to_string(),
             correlation_id: String::new(),
             timestamp_ms: 1_700_000_000_000,
+            body: None,
         }
     }
 
