@@ -12,11 +12,16 @@ repository.workspace   = true
 workspace = true
 
 [dependencies]
-loom-core.workspace = true
+loom-core.workspace   = true
+async-trait.workspace = true
+thiserror.workspace   = true
+
+[dev-dependencies]
+# the conformance leg drives the async trait under a runtime
+tokio.workspace = true
 
 [features]
 # fakes ship inside the crate that defines the trait (workspace-setup.md §6)
 test-support = []
 # the shared Store conformance suite (CI job d, gains teeth at PR-05)
 conformance  = []
-

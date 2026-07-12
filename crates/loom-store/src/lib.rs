@@ -1,4 +1,43 @@
 // Copyright 2026 Loom Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! `loom-store` — `Store` trait + `SqliteStore`. SQLite-only in Phase 1 (ADR-0013). Lands in PR-05.
+//! `loom-store` — the persistence seam.
+//!
+//! One [`Store`] trait defines every durable surface the control plane touches:
+//! jobs, attempts, leases (with the fencing compare-and-set), usage records,
+//! the transactional outbox, idempotency keys, and the enrollment/auth tables
+//! (`hosts`/`gpus`/`nodes`, `accounts`/`api_keys`). Phase 1 ships exactly two
+//! implementations of it — an in-memory [`FakeStore`] (behind the `test-support`
+//! feature) and a `SqliteStore` on `sqlx` (added in PR-05b) — and a single
+//! shared [`conformance`] suite (behind the `conformance` feature) that both
+//! must pass, so a fake can never silently diverge from the real backend
+//! (workspace-setup.md §6).
+//!
+//! Persistence returns the same `loom-core` aggregates the pure logic operates
+//! on (`Job`, `Attempt`, `Lease`, `UsageRecord`, `Node`); the row types this
+//! crate adds ([`records`]) are the ones the domain model does not own — the
+//! outbox, idempotency, and enrollment/auth surfaces.
+
+// Store-layer type names deliberately echo their module (`StoreError`,
+// `OutboxEvent`) so they read unambiguously at call sites in `loomd`.
+#![allow(clippy::module_name_repetitions)]
+
+pub mod error;
+pub mod records;
+pub mod store;
+
+#[cfg(feature = "test-support")]
+pub mod fake;
+
+#[cfg(feature = "conformance")]
+pub mod conformance;
+
+pub use error::StoreError;
+pub use records::{
+    Account, ApiKey, Gpu, Host, HostStatus, IdempotencyOutcome, IdempotencyRecord, JobQuery,
+    LeaseCommit, NewOutboxEvent, OutboxEvent, OutboxId,
+};
+pub use store::Store;
+
+#[cfg(feature = "test-support")]
+pub use fake::FakeStore;
