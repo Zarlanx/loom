@@ -204,6 +204,7 @@ message JobManifest {
   int64  max_duration_ms     = 5;
   string sealed_secrets_ref  = 6;   // handle to sealed-channel env injection (security §7); NOT the secrets
   string start_checkpoint_uri = 7;  // resume-from, if any
+  Backend backend             = 8;  // compute-backend target (ADR-0015); scheduler matches it to node capability
 }
 message JobAccept { string attempt_id = 1; }
 message JobReject { string attempt_id = 1; RejectReason reason = 2; string detail = 3; }
@@ -227,7 +228,7 @@ message JobCheckpointed {       // also agent-initiated on owner-interrupt
 }
 message JobCompleted { string attempt_id = 1; int32 exit_code = 2; }
 message JobFailed    { string attempt_id = 1; ExitClass exit_class = 2; string detail = 3; }
-enum ExitClass { OOM = 0; NONZERO_EXIT = 1; SANDBOX_VIOLATION = 2; NODE_FAULT = 3; }
+enum ExitClass { UNSPECIFIED = 0; OOM = 1; NONZERO_EXIT = 2; SANDBOX_VIOLATION = 3; NODE_FAULT = 4; }
 message JobAbort { string attempt_id = 1; string reason = 2; }  // gateway→agent: kill now
 ```
 
