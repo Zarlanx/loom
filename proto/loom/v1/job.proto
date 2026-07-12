@@ -1,0 +1,117 @@
+// Copyright 2026 Loom Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package loom.v1;
+
+import "loom/v1/common.proto";
+
+// Job lifecycle (agent-protocol.md §3c), M1 subset: offer/accept/reject, prepare
+// progress, started, and the terminal reports. Checkpoint messages (JobCheckpointRequest
+// / JobCheckpointed, envelope fields 35/36) are deliberately NOT frozen here — they land
+// additively with PR-17.
+
+// Resource requirements for an attempt.
+message ResourceClaim {
+  uint32 gpus = 1;
+  // Minimum "GPU memory" in MB. Backend-neutral (ADR-0015): on a unified-memory node
+  // (MLX) this is the whole shared pool, on a discrete node (CUDA/ROCm) it is VRAM —
+  // matching the domain requirement `ResourceClaim.min_memory_mb` (loom-core job.rs).
+  // Tag 2 is unchanged, so the rename from `min_vram_mb` is wire-compatible.
+  uint64 min_memory_mb = 2;
+  uint32 cpu = 3;
+  uint64 ram_mb = 4;
+}
+
+// The job specification the agent runs. Serialized to bytes and signed inside
+// SignedManifest so its authenticity survives a compromised gateway (agent-protocol.md §6).
+message JobManifest {
+  // Content-addressed image digest; the agent verifies it before run (security.md §7).
+  string image_digest = 1;
+  ResourceClaim resource = 2;
+  string isolation_tier = 3;
+  string trust_tier = 4;
+  int64 max_duration_ms = 5;
+  string sealed_secrets_ref = 6;
+  string start_checkpoint_uri = 7;
+  // Compute backend this job targets (ADR-0015); scheduler matches it to node capability.
+  Backend backend = 8;
+}
+
+// A control-plane-signed manifest. The signature is over `manifest_pb` bytes so signing
+// dodges canonicalization ambiguity (agent-protocol.md §6).
+message SignedManifest {
+  bytes manifest_pb = 1;
+  bytes cp_sig = 2;
+  string key_id = 3;
+}
+
+message JobOffer {
+  string attempt_id = 1;
+  SignedManifest manifest = 2;
+  // Monotonic fencing token for this lease (agent-protocol.md §5).
+  string lease_fence = 3;
+  int64 lease_expires_ms = 4;
+}
+
+message JobAccept {
+  string attempt_id = 1;
+}
+
+// Why an agent refused an offer. LOCAL_POLICY is the default (0): the control plane can
+// never override an owner's local policy (agent-protocol.md §3c).
+enum RejectReason {
+  REJECT_REASON_LOCAL_POLICY = 0;
+  REJECT_REASON_THERMAL = 1;
+  REJECT_REASON_OWNER_WINDOW = 2;
+  REJECT_REASON_RESOURCE = 3;
+  REJECT_REASON_MANIFEST_SIG = 4;
+  REJECT_REASON_TIER_UNSUPPORTED = 5;
+}
+
+message JobReject {
+  string attempt_id = 1;
+  RejectReason reason = 2;
+  string detail = 3;
+}
+
+message JobPrepareProgress {
+  string attempt_id = 1;
+  uint32 image_pct = 2;
+  uint32 weights_pct = 3;
+}
+
+message JobStarted {
+  string attempt_id = 1;
+  int64 started_monotonic_ms = 2;
+}
+
+message JobCompleted {
+  string attempt_id = 1;
+  int32 exit_code = 2;
+}
+
+// Classification of a failed attempt; feeds reliability scoring (control-plane.md §5).
+// Tag 0 is the proto3 default, so it must be a neutral UNSPECIFIED rather than a real
+// class — otherwise an unset `exit_class` would silently decode as a concrete failure and
+// poison reliability scoring.
+enum ExitClass {
+  EXIT_CLASS_UNSPECIFIED = 0;
+  EXIT_CLASS_OOM = 1;
+  EXIT_CLASS_NONZERO_EXIT = 2;
+  EXIT_CLASS_SANDBOX_VIOLATION = 3;
+  EXIT_CLASS_NODE_FAULT = 4;
+}
+
+message JobFailed {
+  string attempt_id = 1;
+  ExitClass exit_class = 2;
+  string detail = 3;
+}
+
+// Gateway → agent: kill now.
+message JobAbort {
+  string attempt_id = 1;
+  string reason = 2;
+}
