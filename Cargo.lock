@@ -1134,8 +1134,12 @@ dependencies = [
 name = "loom-bus"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "loom-core",
  "loom-store",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
