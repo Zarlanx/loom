@@ -28,10 +28,14 @@ unwrap_used = "deny"
 async-trait.workspace = true
 # typed library errors (thiserror in libs)
 thiserror.workspace   = true
+# the ProcessDriver spawns/awaits/kills real host processes; io-util is added for
+# draining child stdout/stderr (AsyncReadExt::read_to_end)
+tokio = { workspace = true, features = ["io-util"] }
 
-[dev-dependencies]
-# `#[tokio::test]` harness that drives the async lifecycle conformance suite
-tokio.workspace = true
+# unix-only: signal delivery (SIGTERM/SIGKILL to the process group) for the
+# ProcessDriver's graceful eject and kill-tree teardown
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [features]
 # the FakeDriver ships inside the crate that defines the trait (workspace-setup.md §6)

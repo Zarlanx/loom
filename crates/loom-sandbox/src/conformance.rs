@@ -12,7 +12,8 @@
 //!
 //! Every case is written against a `&dyn SandboxDriver`, which also keeps the
 //! trait provably object-safe. The canonical commands are addressed absolutely
-//! (`/bin/echo`, `/bin/sleep`, `/bin/false`) so no `PATH` is assumed.
+//! (`/bin/echo`, `/bin/sleep`, `/usr/bin/false`) so no `PATH` is assumed and the
+//! same paths resolve on macOS and Linux.
 
 #![allow(clippy::missing_panics_doc)] // the suite *is* assertions; panics are the report.
 
@@ -67,7 +68,7 @@ pub async fn echo_runs_to_success(driver: &dyn SandboxDriver) {
 
 /// A failing command's non-zero exit is reported faithfully.
 pub async fn nonzero_exit_is_reported(driver: &dyn SandboxDriver) {
-    let spec = SandboxSpec::new("/bin/false");
+    let spec = SandboxSpec::new("/usr/bin/false");
     let handle = driver.prepare(spec).await.expect("prepare false");
     driver.launch(handle).await.expect("launch false");
 

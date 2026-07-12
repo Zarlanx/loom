@@ -30,6 +30,12 @@ pub mod egress;
 pub mod limits;
 pub mod spec;
 
+// The ProcessDriver is a unix host-process concept (process groups, signals);
+// on other platforms there is simply no ProcessDriver — the skip-cleanly
+// discipline expressed at the type level.
+#[cfg(unix)]
+pub mod process;
+
 #[cfg(feature = "test-support")]
 pub mod fake;
 
@@ -43,6 +49,9 @@ pub use driver::{
 pub use egress::{EgressPolicy, EgressRule};
 pub use limits::{CpuLimit, ResourceLimits};
 pub use spec::SandboxSpec;
+
+#[cfg(unix)]
+pub use process::ProcessDriver;
 
 #[cfg(feature = "test-support")]
 pub use fake::{FakeDriver, FakeScript};
