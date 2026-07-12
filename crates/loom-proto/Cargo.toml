@@ -1,6 +1,7 @@
 [package]
 name        = "loom-proto"
 description = "Wire schema: prost codegen, envelope codec, golden vectors (PR-02)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

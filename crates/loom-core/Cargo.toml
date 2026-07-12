@@ -1,6 +1,7 @@
 [package]
 name        = "loom-core"
 description = "Domain types + pure state machines — zero I/O (PR-03)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

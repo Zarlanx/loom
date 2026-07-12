@@ -1,6 +1,7 @@
 [package]
 name        = "loom-store"
 description = "Store trait + SqliteStore (sqlx) — SQLite-only in Phase 1 (PR-05)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

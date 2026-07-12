@@ -1,6 +1,7 @@
 [package]
 name        = "loom-sandbox"
 description = "SandboxDriver trait + drivers: ProcessDriver (macOS/MLX), hardened runc (PR-07)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

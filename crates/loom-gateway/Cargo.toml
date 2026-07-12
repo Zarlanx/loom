@@ -1,6 +1,7 @@
 [package]
 name        = "loom-gateway"
 description = "OpenAI-compatible inference proxy, embedded in loomd (PR-19)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

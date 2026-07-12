@@ -1,6 +1,7 @@
 [package]
 name        = "loom-agentproto"
 description = "Server-side agent-gateway session logic: QUIC/WSS terminator (PR-09)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

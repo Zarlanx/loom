@@ -1,6 +1,7 @@
 [package]
 name        = "loomd"
 description = "The server: API + scheduler + gateway + agent-gateway (PR-11)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

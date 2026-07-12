@@ -1,6 +1,7 @@
 [package]
 name        = "loom-hostd"
 description = "The host agent (PR-08)"
+publish     = false
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true

@@ -22,6 +22,8 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards         = "deny"
+# internal path deps carry no version; permitted for private (publish = false) crates only
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
