@@ -48,7 +48,7 @@ tracing           = "0.1"
 tracing-subscriber = { version = "=0.3", features = ["env-filter", "json"] }
 thiserror         = "2"
 anyhow            = "1"
-async-trait       = "0.1"        # object-safe async trait methods (loom-store `Store` seam)
+async-trait       = "0.1"        # object-safe async trait methods (loom-store `Store` seam + loom-sandbox `SandboxDriver`)
 proptest          = "1"          # property-based tests (dev-dependency only; loom-core invariants)
 tempfile          = "3"          # file-backed temp dirs for the SQLite-WAL conformance leg (dev-dependency)
 # PR-26 bootstrap-auth security crypto. sha2/hmac/hex/getrandom are already in the

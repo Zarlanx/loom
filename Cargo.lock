@@ -1211,6 +1211,11 @@ dependencies = [
 [[package]]
 name = "loom-sandbox"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "thiserror 2.0.18",
+ "tokio",
+]
 
 [[package]]
 name = "loom-store"
