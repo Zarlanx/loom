@@ -1,0 +1,173 @@
+// Copyright 2026 Loom Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+//! Newtype identifiers and monotonic tokens for the domain model.
+//!
+//! Every identifier is a distinct type so a `JobId` can never be passed where a
+//! `NodeId` is expected. String-backed ids stay dependency-free: `loom-core`
+//! mints no UUIDs (that would need randomness/I-O), it only carries identity
+//! assigned upstream. [`FenceToken`] and [`AttemptNo`] are the two ordered,
+//! `Copy` tokens the fencing rules depend on.
+
+use core::fmt;
+
+/// Declares a `String`-backed newtype identifier with the standard conversions.
+macro_rules! string_id {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub struct $name(String);
+
+        impl $name {
+            /// Wraps an owned or borrowed string as this identifier.
+            #[must_use]
+            pub fn new(value: impl Into<String>) -> Self {
+                Self(value.into())
+            }
+
+            /// Borrows the identifier as a string slice.
+            #[must_use]
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+
+        impl From<String> for $name {
+            fn from(value: String) -> Self {
+                Self(value)
+            }
+        }
+
+        impl From<&str> for $name {
+            fn from(value: &str) -> Self {
+                Self(value.to_owned())
+            }
+        }
+    };
+}
+
+string_id!(
+    /// Identifies a renter job — the unit of renter intent and the fencing lineage key.
+    JobId
+);
+string_id!(
+    /// Identifies one placement (attempt) of a job on a node.
+    AttemptId
+);
+string_id!(
+    /// Identifies a schedulable capacity offer (a host + GPU + tier + price).
+    NodeId
+);
+string_id!(
+    /// Identifies a host machine.
+    HostId
+);
+string_id!(
+    /// Identifies one GPU advertised by a host.
+    GpuId
+);
+string_id!(
+    /// Identifies a lease — the exclusive, expiring claim on a node for an attempt.
+    LeaseId
+);
+string_id!(
+    /// Identifies a billing account.
+    AccountId
+);
+string_id!(
+    /// Identifies a serving deployment.
+    DeploymentId
+);
+string_id!(
+    /// Identifies a serving replica (a long-lived attempt under a deployment).
+    ReplicaId
+);
+string_id!(
+    /// A content-addressed checkpoint location carried across a requeue lineage.
+    CheckpointUri
+);
+
+/// A monotonic fencing token minted by the single-writer scheduler.
+///
+/// The split-brain guard (agent-protocol §5): a requeued attempt always receives
+/// a strictly greater fence, and any message stamped with a stale (lower) fence
+/// is rejected. Ordering is the whole point, so [`FenceToken`] is `Ord`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FenceToken(pub u64);
+
+impl FenceToken {
+    /// Returns the underlying token value.
+    #[must_use]
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl fmt::Display for FenceToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A monotonic per-job attempt counter (1, 2, 3, … across a requeue lineage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AttemptNo(pub u32);
+
+impl AttemptNo {
+    /// The first attempt of a job.
+    pub const FIRST: Self = Self(1);
+
+    /// Returns the underlying counter value.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    /// Returns the next attempt number (saturating at [`u32::MAX`]).
+    #[must_use]
+    pub const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+}
+
+impl fmt::Display for AttemptNo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::wildcard_imports)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distinct_ids_display_their_inner_value() {
+        let job = JobId::new("job-1");
+        assert_eq!(job.as_str(), "job-1");
+        assert_eq!(job.to_string(), "job-1");
+        assert_eq!(JobId::from("job-1"), job);
+        assert_eq!(JobId::from(String::from("job-1")), job);
+    }
+
+    #[test]
+    fn fence_tokens_are_totally_ordered() {
+        assert!(FenceToken(7) < FenceToken(8));
+        assert_eq!(FenceToken(8).value(), 8);
+        assert_eq!(FenceToken(8).to_string(), "8");
+    }
+
+    #[test]
+    fn attempt_numbers_increment_and_saturate() {
+        assert_eq!(AttemptNo::FIRST, AttemptNo(1));
+        assert_eq!(AttemptNo(1).next(), AttemptNo(2));
+        assert_eq!(AttemptNo(3).get(), 3);
+        assert_eq!(AttemptNo(u32::MAX).next(), AttemptNo(u32::MAX));
+    }
+}
