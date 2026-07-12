@@ -30,7 +30,7 @@ repository   = "https://github.com/Zarlanx/loom"
 tokio             = { version = "=1.47", features = ["rt-multi-thread", "macros", "sync", "time", "process", "signal", "net"] }
 axum              = { version = "=0.8", features = ["macros", "json"] }
 tower             = { version = "=0.5", features = ["util"] }   # dev-only: in-process mock-server tests (xtask)
-sqlx              = { version = "=0.9", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+sqlx              = { version = "=0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }   # doc specified =0.9; it needs rustc 1.94 while the toolchain is pinned 1.89, so pinned to current stable =0.8 (workspace-setup.md §3 pin note)
 quinn             = "=0.11"
 rustls            = { version = "=0.23", default-features = false, features = ["aws-lc-rs"] }
 tokio-tungstenite = { version = "=0.24", features = ["rustls-tls-native-roots"] }
@@ -47,7 +47,9 @@ tracing           = "0.1"
 tracing-subscriber = { version = "=0.3", features = ["env-filter", "json"] }
 thiserror         = "2"
 anyhow            = "1"
+async-trait       = "0.1"        # object-safe async trait methods (loom-store `Store` seam)
 proptest          = "1"          # property-based tests (dev-dependency only; loom-core invariants)
+tempfile          = "3"          # file-backed temp dirs for the SQLite-WAL conformance leg (dev-dependency)
 # internal crates referenced by path so intra-workspace edges are explicit:
 loom-proto      = { path = "crates/loom-proto" }
 loom-core       = { path = "crates/loom-core" }
