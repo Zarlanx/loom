@@ -6,10 +6,10 @@
 //!
 //! This crate carries the identifiers, the job/attempt/node/lease/usage types,
 //! and the deterministic logic that must never be wrong: the job-lifecycle FSM
-//! ([`job`]), and — landing alongside it — the lease/fencing rules and the
-//! scheduler's `filter` → `score` → `commit` decision logic. It reads no clock
-//! (`SystemTime::now` is a denied method — inject a [`time::Timestamp`]) and
-//! touches no socket or database. If a thing does I/O, it does not live here.
+//! ([`job`]), the lease/fencing rules ([`fencing`]), and the scheduler's
+//! `filter` → `score` → `commit` decision logic ([`scheduler`]). It reads no
+//! clock (`SystemTime::now` is a denied method — inject a [`time::Timestamp`])
+//! and touches no socket or database. If a thing does I/O, it does not live here.
 //!
 //! The split-brain guard runs through the whole crate: leases carry a monotonic
 //! [`ids::FenceToken`], a requeued attempt always gets a strictly greater fence,
@@ -26,15 +26,18 @@
 
 pub mod attempt;
 pub mod capability;
+pub mod fencing;
 pub mod ids;
 pub mod job;
 pub mod lease;
 pub mod node;
+pub mod scheduler;
 pub mod time;
 pub mod usage;
 
 pub use attempt::{Attempt, AttemptPhase};
 pub use capability::{Backend, BackendSet, IsolationTier, MemoryKind, MemoryModel, Version};
+pub use fencing::{FenceError, FenceVerdict, LeaseBook, LeaseGrant};
 pub use ids::{
     AccountId, AttemptId, AttemptNo, CheckpointUri, DeploymentId, FenceToken, GpuId, HostId, JobId,
     LeaseId, NodeId, ReplicaId,
@@ -45,5 +48,9 @@ pub use job::{
 };
 pub use lease::{Lease, LeaseState};
 pub use node::{Node, NodeStatus};
+pub use scheduler::{
+    NodeOffer, Placement, PlacementSignals, Score, ScoreWeights, is_feasible, plan_placement,
+    resolve_backend, score,
+};
 pub use time::Timestamp;
 pub use usage::{UsageRecord, UsageValidation};
