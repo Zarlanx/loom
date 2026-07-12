@@ -1,0 +1,58 @@
+// Copyright 2026 Loom Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package loom.v1;
+
+import "loom/v1/common.proto";
+
+// Presence & health (agent-protocol.md §3b). Heartbeat is high-frequency on the
+// heartbeat stream; StateReport is the full resync sent after every reconnect.
+
+// Agent lifecycle state (host-agent.md §3). Mirrored in Heartbeat and StateReport so the
+// gateway always has ground truth.
+enum AgentState {
+  AGENT_STATE_UNSPECIFIED = 0;
+  AGENT_STATE_ENROLLING = 1;
+  AGENT_STATE_IDLE = 2;
+  AGENT_STATE_CLAIMED = 3;
+  AGENT_STATE_PREPARING = 4;
+  AGENT_STATE_RUNNING = 5;
+  AGENT_STATE_TEARING_DOWN = 6;
+  AGENT_STATE_DRAINING = 7;
+}
+
+// Summary GPU telemetry (not the full sample stream). Wall-clock-derived values are
+// advisory; billing uses monotonic counters (agent-protocol.md §3b).
+message GpuTelemetry {
+  uint32 util_pct = 1;
+  uint64 vram_used_mb = 2;
+  uint32 power_w = 3;
+  uint32 temp_c = 4;
+}
+
+// Per-attempt reconciliation state carried in a StateReport.
+message AttemptState {
+  string attempt_id = 1;
+  string phase = 2;
+  uint64 last_seq_sent = 3;
+  // Monotonic fencing token the agent last held for this attempt (agent-protocol.md §5).
+  string lease_fence = 4;
+}
+
+message Heartbeat {
+  AgentState state = 1;
+  GpuTelemetry gpu = 2;
+  string cache_digest_version = 3;
+  // Agent process monotonic clock — skew-immune (agent-protocol.md §3b).
+  int64 monotonic_uptime_ms = 4;
+  repeated string active_attempt_ids = 5;
+}
+
+message StateReport {
+  AgentState state = 1;
+  repeated AttemptState attempts = 2;
+  VersionRange supported_versions = 3;
+  string cache_digest_version = 4;
+}
