@@ -41,6 +41,13 @@ enum Verb {
         /// Target backend (`postgres` joins at marketplace scale, ADR-0013).
         #[arg(long, value_enum, default_value_t = MigrateBackend::SqliteWal)]
         backend: MigrateBackend,
+        /// The SQLite-WAL database file to migrate (created if absent).
+        #[arg(long, default_value = "loom.db")]
+        database: PathBuf,
+        /// Verify the database is fully migrated without applying anything;
+        /// exit non-zero if any migration is pending.
+        #[arg(long)]
+        check: bool,
     },
     /// Curated runtime-image pipeline (CI job g, nightly).
     Images {
@@ -83,10 +90,11 @@ fn main() -> Result<()> {
         } => {
             golden_regen()?;
         }
-        Verb::Migrate { backend } => {
-            // Gains teeth at PR-05 (store + migration set).
-            println!("xtask migrate --backend {backend:?}: no migrations yet (land in PR-05)");
-        }
+        Verb::Migrate {
+            backend,
+            database,
+            check,
+        } => run_migrate(backend, &database, check)?,
         Verb::Images {
             action: ImagesAction::Build,
         } => {
@@ -97,6 +105,54 @@ fn main() -> Result<()> {
         }
         Verb::MockServer { port } => run_mock_server(port)?,
     }
+    Ok(())
+}
+
+/// Apply or check the migration set against the target backend (PR-05c). Phase 1
+/// has one backend — file-backed WAL `SQLite` — driven through `loom-store`'s
+/// embedded migrator, the single canonical migration path (`migrations/`, one
+/// logical history). `--check` verifies the database is fully migrated and exits
+/// non-zero if anything is pending; the default applies every pending migration.
+fn run_migrate(backend: MigrateBackend, database: &Path, check: bool) -> Result<()> {
+    // Exhaustive so a future backend (Postgres, at marketplace scale) must be
+    // handled here rather than silently falling through.
+    match backend {
+        MigrateBackend::SqliteWal => {}
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(async {
+        if check {
+            let report = loom_store::migrate::verify(database).await?;
+            println!(
+                "xtask migrate --check --backend sqlite-wal: {applied}/{embedded} applied \
+                 ({pending} pending) at {path}",
+                applied = report.applied,
+                embedded = report.embedded,
+                pending = report.pending(),
+                path = database.display(),
+            );
+            if report.is_current() {
+                println!("  database is fully migrated.");
+            } else {
+                anyhow::bail!(
+                    "{pending} migration(s) pending at {path}; run `cargo xtask migrate` to apply",
+                    pending = report.pending(),
+                    path = database.display(),
+                );
+            }
+        } else {
+            let report = loom_store::migrate::apply(database).await?;
+            println!(
+                "xtask migrate --backend sqlite-wal: migration set applied — {embedded} \
+                 migration(s) now current at {path}",
+                embedded = report.embedded,
+                path = database.display(),
+            );
+        }
+        Ok::<(), anyhow::Error>(())
+    })?;
     Ok(())
 }
 
