@@ -17,10 +17,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .join("..")
         .join("proto");
 
-    // Root `.proto` files to compile. Imports are resolved from `proto_root`, so a file
-    // that imports another need not be listed twice, but listing them explicitly keeps
-    // the codegen inputs auditable.
-    let files = [proto_root.join("loom/v1/envelope.proto")];
+    // The `.proto` files to compile. Imports are resolved from `proto_root`; listing every
+    // file explicitly (rather than relying on import discovery) keeps the codegen inputs
+    // auditable.
+    let files = [
+        proto_root.join("loom/v1/common.proto"),
+        proto_root.join("loom/v1/enrollment.proto"),
+        proto_root.join("loom/v1/health.proto"),
+        proto_root.join("loom/v1/job.proto"),
+        proto_root.join("loom/v1/log.proto"),
+        proto_root.join("loom/v1/envelope.proto"),
+    ];
+
+    // Completeness guard: fail the build if a `.proto` exists under `loom/v1/` that is
+    // not in `files`, so a newly added schema can never be silently dropped from codegen.
+    // The directory-level `rerun-if-changed` below reruns this script when such a file
+    // appears; this check turns that into a hard build failure until the file is listed
+    // above. Both sides are sorted so the comparison is order-independent and deterministic.
+    let mut discovered: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(proto_root.join("loom/v1"))? {
+        let path = entry?.path();
+        if path.extension() == Some(std::ffi::OsStr::new("proto")) {
+            discovered.push(path);
+        }
+    }
+    discovered.sort();
+    let mut listed: Vec<PathBuf> = files.to_vec();
+    listed.sort();
+    if discovered != listed {
+        return Err(std::io::Error::other(format!(
+            "proto sources under loom/v1 are out of sync with build.rs: listed {listed:?}, \
+             discovered {discovered:?}; every .proto must be listed in `files` for codegen"
+        ))
+        .into());
+    }
 
     // The per-file directives below track edits to the listed sources. The
     // directory-level watch is deliberately kept *as well*: it is the only thing
