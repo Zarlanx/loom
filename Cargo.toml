@@ -30,10 +30,11 @@ repository   = "https://github.com/Zarlanx/loom"
 tokio             = { version = "=1.47", features = ["rt-multi-thread", "macros", "sync", "time", "process", "signal", "net"] }
 axum              = { version = "=0.8", features = ["macros", "json"] }
 tower             = { version = "=0.5", features = ["util"] }   # dev-only: in-process mock-server tests (xtask)
-sqlx              = { version = "=0.9", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }
+sqlx              = { version = "=0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros", "migrate"] }   # doc specified =0.9; it needs rustc 1.94 while the toolchain is pinned 1.89, so pinned to current stable =0.8 (workspace-setup.md §3 pin note)
 quinn             = "=0.11"
 rustls            = { version = "=0.23", default-features = false, features = ["aws-lc-rs"] }
 tokio-tungstenite = { version = "=0.24", features = ["rustls-tls-native-roots"] }
+futures-util      = "0.3"        # Sink/Stream ext over the WebSocket control channel (loom-hostd)
 prost             = "=0.13"
 prost-build       = "=0.13"
 protox            = "=0.7.1"   # pure-Rust protoc: hermetic prost codegen, no system protoc (workspace-setup.md §4)
@@ -47,7 +48,20 @@ tracing           = "0.1"
 tracing-subscriber = { version = "=0.3", features = ["env-filter", "json"] }
 thiserror         = "2"
 anyhow            = "1"
+async-trait       = "0.1"        # object-safe async trait methods (loom-store `Store` seam + loom-sandbox `SandboxDriver`)
+libc              = "0.2"        # unix signal delivery for the ProcessDriver's kill-tree teardown
 proptest          = "1"          # property-based tests (dev-dependency only; loom-core invariants)
+tempfile          = "3"          # file-backed temp dirs for the SQLite-WAL conformance leg (dev-dependency)
+# PR-26 bootstrap-auth security crypto. sha2/hmac/hex/getrandom are already in the
+# tree (sqlx-core), so they add no new build; rcgen is the one genuinely new crate.
+# rcgen doc-unspecified → current MSRV-1.89-compatible stable =0.13 (workspace-setup.md §3 pin note).
+getrandom         = "0.3"        # OS CSPRNG for enrollment/admin token + enrollment-signing-key bytes
+hex               = "0.4"        # hex encoding of token MACs and key hashes
+hmac              = "0.12"       # HMAC-SHA256 for stateless enrollment-token signatures
+rcgen             = { version = "=0.13", default-features = false, features = ["pem", "ring", "x509-parser"] }   # local CA + node-cert signing (X.509); x509-parser: parse agent CSRs + reload the CA from PEM
+rustls-pki-types  = "1"          # decode the DER CSR the agent puts on the wire (EnrollRequest.csr_der) + the CA cert PEM→DER; already in-tree via rcgen/rustls
+sha2              = "0.10"       # SHA-256 for admin-token hashing (high-entropy token → fast hash is safe)
+x509-parser       = "0.16"       # dev-only: cryptographic leaf→CA chain verification in the bootstrap proving test
 # internal crates referenced by path so intra-workspace edges are explicit:
 loom-proto      = { path = "crates/loom-proto" }
 loom-core       = { path = "crates/loom-core" }
