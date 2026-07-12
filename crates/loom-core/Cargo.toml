@@ -15,3 +15,7 @@ workspace = true
 # typed library errors (thiserror in libs; loom-core stays otherwise dependency-free)
 thiserror.workspace = true
 
+[dev-dependencies]
+# property tests for the fencing/requeue and scheduler invariants (PR-03b)
+proptest.workspace = true
+
