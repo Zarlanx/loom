@@ -2582,6 +2582,7 @@ dependencies = [
  "axum",
  "clap",
  "loom-proto",
+ "loom-store",
  "serde_json",
  "tokio",
  "tower",
