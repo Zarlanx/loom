@@ -31,9 +31,9 @@ enum Verb {
     },
     /// Apply / check the sqlx migration set against a target backend.
     Migrate {
-        /// Target backend (`sqlite-wal`; `postgres` joins at marketplace scale, ADR-0013).
-        #[arg(long, default_value = "sqlite-wal")]
-        backend: String,
+        /// Target backend (`postgres` joins at marketplace scale, ADR-0013).
+        #[arg(long, value_enum, default_value_t = MigrateBackend::SqliteWal)]
+        backend: MigrateBackend,
     },
     /// Curated runtime-image pipeline (CI job g, nightly).
     Images {
@@ -42,6 +42,12 @@ enum Verb {
     },
     /// Assemble the static release binaries + checksums — the single blessed release path.
     Release,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum MigrateBackend {
+    /// File-backed WAL `SQLite` — the only Phase-1 backend (ADR-0013).
+    SqliteWal,
 }
 
 #[derive(Subcommand, Debug)]
@@ -70,7 +76,7 @@ fn main() {
         }
         Verb::Migrate { backend } => {
             // Gains teeth at PR-05 (store + migration set).
-            println!("xtask migrate --backend {backend}: no migrations yet (land in PR-05)");
+            println!("xtask migrate --backend {backend:?}: no migrations yet (land in PR-05)");
         }
         Verb::Images {
             action: ImagesAction::Build,

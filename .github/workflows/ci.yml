@@ -13,11 +13,16 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   fmt: # (a) required
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: rustup show # installs the rust-toolchain.toml pin
       - run: cargo fmt --all --check
 
@@ -25,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -33,6 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features
@@ -44,6 +53,8 @@ jobs:
         backend: [sqlite-wal] # Phase 1 = SQLite only; `postgres` joins at Phase 3 (ADR-0013)
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: cargo run -p xtask -- migrate --backend ${{ matrix.backend }}
@@ -54,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: cargo run -p xtask -- codegen --check
@@ -62,6 +75,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p loom-proto --test golden_vectors
+
+  deny: # license + advisory policy (deny.toml) — enforced, not documentation-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@v2

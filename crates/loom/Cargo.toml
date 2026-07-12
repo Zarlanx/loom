@@ -1,6 +1,7 @@
 [package]
 name        = "loom"
 description = "The CLI — renter + host + admin verbs. Thin HTTP client; deliberately links no server libs (PR-10)"
+publish     = false # `loom` on crates.io is tokio-rs/loom; never publish this by accident
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
