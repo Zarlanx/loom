@@ -4,12 +4,15 @@
 //! `cargo xtask` — typed dev tooling (docs/build/workspace-setup.md §5).
 //!
 //! Anything a human would otherwise paste from a README into a shell becomes a verb
-//! here. Every verb below is a stub that reports which PR gives it teeth; CI invokes
-//! `codegen --check` and `migrate` today, so their no-op success paths are deliberate.
+//! here. `codegen --check` validates the committed `openapi.json` (PR-04a); the
+//! remaining verbs are stubs that report which PR gives them teeth.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use anyhow::Result;
 use clap::{Parser, Subcommand};
+
+mod openapi;
 
 #[derive(Parser, Debug)]
 #[command(name = "xtask", about = "Loom dev tooling", version)]
@@ -64,13 +67,9 @@ enum ImagesAction {
     Build,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     match Cli::parse().verb {
-        Verb::Codegen { check } => {
-            // Gains teeth at PR-02 (proto regen) and PR-04/PR-11 (OpenAPI diff gate).
-            let mode = if check { " --check" } else { "" };
-            println!("xtask codegen{mode}: no codegen targets yet — scaffold only (PR-02/PR-04)");
-        }
+        Verb::Codegen { check } => run_codegen(check)?,
         Verb::Golden {
             action: GoldenAction::Regen,
         } => {
@@ -92,10 +91,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Validate the committed `openapi.json` (PR-04a). Proto regeneration lands in
+/// PR-02 and generated-vs-committed `OpenAPI` diffing is deferred to PR-11, once real
+/// axum handlers exist to regenerate the spec from; until then this verb structurally
+/// validates the hand-authored contract only.
+fn run_codegen(check: bool) -> Result<()> {
+    // `CARGO_MANIFEST_DIR` is the `xtask/` crate dir; the spec sits at the repo root.
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("openapi.json");
+    let report = openapi::load_and_validate(&spec_path)?;
+    let mode = if check { "codegen --check" } else { "codegen" };
+    println!(
+        "xtask {mode}: openapi.json valid — {ops} operations, {schemas} schemas, \
+         {codes} error codes, {routes}/{total} golden-path routes",
+        ops = report.operations,
+        schemas = report.schemas,
+        codes = report.error_codes,
+        routes = report.golden_routes,
+        total = openapi::GOLDEN_PATH_ROUTES.len(),
+    );
+    println!(
+        "  note: proto regen lands in PR-02; generated-vs-committed OpenAPI diffing is \
+         deferred to PR-11 (this verb validates the committed spec only)."
+    );
+    Ok(())
+}
+
 /// Regenerate the checked-in `loom-proto` golden vectors from the canonical message set
 /// (workspace-setup.md §5). The blessed path for an intentional additive schema change;
 /// CI only ever *verifies* these bytes, never regenerates them.
-fn golden_regen() -> Result<(), Box<dyn std::error::Error>> {
+fn golden_regen() -> Result<()> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("crates")
