@@ -7,11 +7,13 @@
 //! here. `codegen --check` validates the committed `openapi.json` (PR-04a); the
 //! remaining verbs are stubs that report which PR gives them teeth.
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod mock;
 mod openapi;
 
 #[derive(Parser, Debug)]
@@ -47,6 +49,12 @@ enum Verb {
     },
     /// Assemble the static release binaries + checksums — the single blessed release path.
     Release,
+    /// Serve the dev-only mock renter API for CLI development (PR-04b). Never shipped.
+    MockServer {
+        /// Loopback port to bind (matches the `openapi.json` loopback server default).
+        #[arg(long, default_value_t = 7777)]
+        port: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -87,8 +95,20 @@ fn main() -> Result<()> {
         Verb::Release => {
             println!("xtask release: release pipeline lands with the first tagged release");
         }
+        Verb::MockServer { port } => run_mock_server(port)?,
     }
     Ok(())
+}
+
+/// Boot the dev-only mock renter API on loopback (PR-04b). It answers every
+/// golden-path route with contract-shaped fixtures so the CLI can be developed
+/// against the frozen contract before real handlers exist.
+fn run_mock_server(port: u16) -> Result<()> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(mock::serve(addr))
 }
 
 /// Validate the committed `openapi.json` (PR-04a). Proto regeneration lands in
