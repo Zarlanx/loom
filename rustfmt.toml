@@ -1,0 +1,6 @@
+edition   = "2024"
+max_width = 100
+# The two import-shaping options from workspace-setup.md §2 are nightly-only on the
+# pinned stable rustfmt (they warn and no-op). Re-enable when they stabilize:
+# imports_granularity = "Crate"
+# group_imports       = "StdExternalCrate"

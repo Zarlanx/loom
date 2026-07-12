@@ -1,0 +1,8 @@
+# One owner for correctness: the invariant core does not parallelize
+# (docs/build/README.md §1 hard call #3 · docs/build/workspace-setup.md §7).
+/crates/loom-core/            @Zarlanx
+/crates/loom-store/           @Zarlanx
+/crates/loom-agentproto/      @Zarlanx
+/migrations/                  @Zarlanx
+# the scheduler lives inside loomd; its files are owned even though the crate is shared:
+/crates/loomd/src/scheduler/  @Zarlanx

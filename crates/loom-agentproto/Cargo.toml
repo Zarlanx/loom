@@ -1,0 +1,22 @@
+[package]
+name        = "loom-agentproto"
+description = "Server-side agent-gateway session logic: QUIC/WSS terminator (PR-09)"
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-proto.workspace = true
+loom-core.workspace  = true
+loom-store.workspace = true
+loom-bus.workspace   = true
+
+[features]
+test-support = []
+

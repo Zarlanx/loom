@@ -1,0 +1,20 @@
+[package]
+name        = "loomd"
+description = "The server: API + scheduler + gateway + agent-gateway (PR-11)"
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-core.workspace       = true
+loom-store.workspace      = true
+loom-bus.workspace        = true
+loom-gateway.workspace    = true
+loom-agentproto.workspace = true
+

@@ -1,0 +1,18 @@
+[package]
+name        = "loom-hostd"
+description = "The host agent (PR-08)"
+publish     = false
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+
+[lints]
+workspace = true
+
+[dependencies]
+loom-proto.workspace   = true
+loom-core.workspace    = true
+loom-sandbox.workspace = true
+

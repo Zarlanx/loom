@@ -1,0 +1,92 @@
+# CI — docs/build/workspace-setup.md §4.
+# Jobs a–c are required-to-merge from PR-01. Jobs d–f are wired here so the pipeline
+# shape exists, but gain teeth only when their owning PR lands (d: PR-05, e: PR-04/PR-11,
+# f: PR-02). The nightly image job (g) lands with PR-24; the hardware-gated GPU smoke
+# job (h) lands with PR-16 — neither exists yet by design.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  fmt: # (a) required
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - run: rustup show # installs the rust-toolchain.toml pin
+      - run: cargo fmt --all --check
+
+  clippy: # (b) required
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test: # (c) required
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo test --workspace --all-features
+
+  store-conformance: # (d) required from PR-05
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [sqlite-wal] # Phase 1 = SQLite only; `postgres` joins at Phase 3 (ADR-0013)
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo run -p xtask -- migrate --backend ${{ matrix.backend }}
+      # sqlite-wal leg runs against a FILE-backed WAL db, never :memory: (workspace-setup.md §6)
+      - run: cargo test -p loom-store --features conformance
+
+  openapi-diff: # (e) scaffolded here; becomes enforcing at PR-11 (real handlers exist)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo run -p xtask -- codegen --check
+
+  proto-golden: # (f) required from PR-02
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - run: rustup show
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - run: cargo test -p loom-proto --test golden_vectors
+
+  deny: # license + advisory policy (deny.toml) — enforced, not documentation-only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2
+        with:
+          rust-version: "1.89.0"
