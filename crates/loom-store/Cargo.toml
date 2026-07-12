@@ -14,11 +14,14 @@ workspace = true
 [dependencies]
 loom-core.workspace   = true
 async-trait.workspace = true
+sqlx.workspace        = true
 thiserror.workspace   = true
 
 [dev-dependencies]
-# the conformance leg drives the async trait under a runtime
-tokio.workspace = true
+# the conformance leg drives the async trait under a runtime, against a
+# file-backed WAL database in a temp dir (never :memory:)
+tempfile.workspace = true
+tokio.workspace    = true
 
 [features]
 # fakes ship inside the crate that defines the trait (workspace-setup.md §6)
