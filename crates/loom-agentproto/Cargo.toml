@@ -16,6 +16,15 @@ loom-proto.workspace = true
 loom-core.workspace  = true
 loom-store.workspace = true
 loom-bus.workspace   = true
+# PR-09 agentgateway: the WSS session terminator, 4-stream demux, and bus bridge.
+# `io-util` (duplex + AsyncRead/Write) is layered on top of the shared tokio pin for
+# this crate only, so the workspace feature set is untouched.
+tokio             = { workspace = true, features = ["io-util"] }
+tokio-tungstenite.workspace = true
+futures-util.workspace      = true
+async-trait.workspace       = true
+serde_json.workspace        = true
+tracing.workspace           = true
 # PR-26 bootstrap-auth: local CA + node-cert signing, enrollment/admin tokens, secrets file.
 rcgen.workspace     = true
 getrandom.workspace = true
@@ -27,10 +36,12 @@ serde       = { workspace = true }
 toml.workspace      = true
 
 [dev-dependencies]
+# Depend on self with `test-support` so `cargo test -p loom-agentproto` (without
+# --all-features) still compiles the tests that drive the in-crate loopback session.
+loom-agentproto = { path = ".", features = ["test-support"] }
 # the bootstrap proving test drives the async store persistence path and verifies
 # a signed node cert chains cryptographically back to the freshly-minted CA.
 loom-store  = { workspace = true, features = ["test-support"] }
-tokio       = { workspace = true }
 tempfile.workspace    = true
 x509-parser = { workspace = true, features = ["verify"] }   # `verify` enables cryptographic signature checking (leaf→CA)
 

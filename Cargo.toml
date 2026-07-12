@@ -34,6 +34,7 @@ sqlx              = { version = "=0.8", default-features = false, features = ["r
 quinn             = "=0.11"
 rustls            = { version = "=0.23", default-features = false, features = ["aws-lc-rs"] }
 tokio-tungstenite = { version = "=0.24", features = ["rustls-tls-native-roots"] }
+futures-util      = "0.3"        # Sink/Stream ext over the WebSocket control channel (loom-hostd)
 prost             = "=0.13"
 prost-build       = "=0.13"
 protox            = "=0.7.1"   # pure-Rust protoc: hermetic prost codegen, no system protoc (workspace-setup.md §4)
