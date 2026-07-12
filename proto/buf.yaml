@@ -1,0 +1,8 @@
+# Copyright 2026 Loom Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Marks `proto/` as the Buf module root so the `loom.v1` package resolves at
+# `loom/v1/*.proto` (Buf PACKAGE_DIRECTORY_MATCH). The workspace build compiles
+# these sources through protox in `crates/loom-proto/build.rs` and never reads
+# this file; it exists only so Buf-based tooling sees a correct module layout.
+version: v1

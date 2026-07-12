@@ -1,0 +1,29 @@
+// Copyright 2026 Loom Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package loom.v1;
+
+// Envelope wraps every wire message (agent-protocol.md §2.2). Every frame on the
+// control/heartbeat/log/metering streams carries exactly one Envelope.
+//
+// PR-02a freezes the header fields and the length-prefix framing (codec.rs). The
+// `oneof body` of concrete message variants is added additively in PR-02b — an
+// Envelope with no body encodes to the same bytes whether or not the oneof exists
+// in the schema, which is exactly the additive-evolution property this contract
+// relies on (agent-protocol.md §2.3).
+message Envelope {
+  // Semver-major of the message schema (agent-protocol.md §2.3). Minor/patch changes
+  // are additive fields and require no bump.
+  uint32 protocol_version = 1;
+  // ULID, unique per sender per connection.
+  string msg_id = 2;
+  // Echoes the msg_id this message responds to; empty if unsolicited.
+  string correlation_id = 3;
+  // Sender wall clock, milliseconds since the Unix epoch. Advisory only — billing
+  // durations derive from monotonic counters, never wall-clock deltas (agent-protocol.md §3b).
+  int64 timestamp_ms = 4;
+
+  // Field numbers 10-83 are the concrete message `oneof body`, frozen in PR-02b.
+}
