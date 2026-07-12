@@ -9,17 +9,27 @@
 //! `agent_id`. That identity is the *connection's*, never a field in the message, so an
 //! agent's events can never be attributed to another node (§5 fencing, §6).
 //!
-//! This is the PR-09a terminator: it bridges an already-authenticated connection.
-//! Token-only enrollment — a bootstrap connection presenting an `EnrollRequest`, verified
-//! against the [`bootstrap`](crate::bootstrap) `CA`/token machinery — lands in PR-09b.
+//! A connection arrives one of two ways (agent-protocol.md §1.2):
+//!
+//! - **already authenticated** ([`PeerIdentity::Node`]) — its client certificate was
+//!   validated at the `TLS` layer and the `agent_id` read from the subject; the terminator
+//!   goes straight to bridging;
+//! - **token-only** ([`PeerIdentity::Bootstrap`]) — no certificate yet. The terminator
+//!   runs the enrollment handshake through its [`Enroller`]: it expects one
+//!   `EnrollRequest`, verifies the token against the [`bootstrap`](crate::bootstrap) `CA`
+//!   machinery, returns a signed node certificate in an `EnrollGrant`, and then bridges
+//!   the now-identified connection. A terminator built without an enroller
+//!   ([`new`](SessionTerminator::new)) refuses token-only connections outright.
 
 use std::sync::Arc;
 
 use loom_bus::Bus;
-use loom_proto::Body;
+use loom_proto::codec::Channel;
+use loom_proto::{Body, Envelope};
 use tracing::warn;
 
 use crate::bridge::{BridgeError, BusBridge};
+use crate::enroll::{EnrollError, Enroller};
 use crate::event::AgentEvent;
 use crate::session::{InboundFrame, PeerIdentity, Session, SessionError};
 
@@ -35,9 +45,13 @@ pub enum TerminatorError {
     #[error("bridge: {0}")]
     Bridge(#[from] BridgeError),
 
-    /// The connection violated the terminator's expectations for its identity (e.g. a
-    /// token-only bootstrap connection reached the bridge-only PR-09a terminator, which
-    /// has no enrollment handler).
+    /// Enrollment of a token-only connection failed (the agent was refused).
+    #[error("enroll: {0}")]
+    Enroll(#[from] EnrollError),
+
+    /// The connection violated the terminator's expectations for its identity — e.g. a
+    /// token-only connection whose first message was not an `EnrollRequest`, or one that
+    /// reached a terminator built without an enrollment handler.
     #[error("protocol: {0}")]
     Protocol(String),
 }
@@ -51,38 +65,55 @@ pub struct ServeSummary {
     pub events_bridged: usize,
 }
 
-/// Drives agent sessions: demux, decode, and bridge onto the bus.
+/// Drives agent sessions: demux, decode, and bridge onto the bus, running enrollment for
+/// token-only connections when configured with an [`Enroller`].
 #[derive(Clone)]
 pub struct SessionTerminator {
     bridge: BusBridge,
+    enroller: Option<Arc<Enroller>>,
 }
 
 impl std::fmt::Debug for SessionTerminator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionTerminator").finish_non_exhaustive()
+        f.debug_struct("SessionTerminator")
+            .field("enrollment", &self.enroller.is_some())
+            .finish_non_exhaustive()
     }
 }
 
 impl SessionTerminator {
-    /// Builds a terminator publishing decoded events onto `bus`.
+    /// Builds a bridge-only terminator over `bus`. It serves already-authenticated
+    /// connections; a token-only connection is refused, since it has no enroller.
     #[must_use]
     pub fn new(bus: Arc<dyn Bus>) -> Self {
         Self {
             bridge: BusBridge::new(bus),
+            enroller: None,
+        }
+    }
+
+    /// Builds a terminator that also enrolls token-only connections through `enroller`.
+    #[must_use]
+    pub fn with_enrollment(bus: Arc<dyn Bus>, enroller: Enroller) -> Self {
+        Self {
+            bridge: BusBridge::new(bus),
+            enroller: Some(Arc::new(enroller)),
         }
     }
 
     /// Serves one agent `session` under the connection's `identity` until the agent
     /// closes, bridging every decoded message onto the bus.
     ///
-    /// PR-09a requires an already-authenticated [`PeerIdentity::Node`]; a token-only
-    /// [`PeerIdentity::Bootstrap`] connection is closed with `enroll_unsupported`, since
-    /// enrollment lands in PR-09b.
+    /// A token-only [`PeerIdentity::Bootstrap`] connection first runs the enrollment
+    /// handshake (see the module docs); an already-authenticated [`PeerIdentity::Node`]
+    /// goes straight to bridging.
     ///
     /// # Errors
-    /// [`TerminatorError::Protocol`] if a token-only connection reaches this bridge-only
-    /// terminator; [`TerminatorError::Session`] on a transport/codec failure that is not
-    /// a clean close; [`TerminatorError::Bridge`] if an event cannot be published.
+    /// [`TerminatorError::Enroll`] if a token-only connection is refused;
+    /// [`TerminatorError::Protocol`] if a token-only connection misbehaves or reaches a
+    /// terminator with no enroller; [`TerminatorError::Session`] on a transport/codec
+    /// failure that is not a clean close; [`TerminatorError::Bridge`] if an event cannot
+    /// be published.
     pub async fn serve<S>(
         &self,
         mut session: S,
@@ -91,25 +122,18 @@ impl SessionTerminator {
     where
         S: Session + Send,
     {
-        let Some(agent_id) = identity.agent_id().map(str::to_owned) else {
-            // A bootstrap connection has no enrollment handler yet (PR-09b).
-            let _ = session.close_with_reason("enroll_unsupported").await;
-            return Err(TerminatorError::Protocol(
-                "token-only bootstrap connection, but this terminator has no enrollment handler"
-                    .to_owned(),
-            ));
-        };
-
-        let mut summary = ServeSummary {
-            agent_id: Some(agent_id.clone()),
-            events_bridged: 0,
+        // Resolve the connection's agent_id: present already for a Node identity, or minted
+        // by the enrollment handshake for a token-only Bootstrap one.
+        let (agent_id, mut events) = match identity.agent_id() {
+            Some(id) => (id.to_owned(), 0),
+            None => (self.enroll_bootstrap(&mut session).await?, 1),
         };
 
         loop {
             match session.recv().await {
                 Ok(frame) => {
                     if self.bridge_frame(&agent_id, &frame).await? {
-                        summary.events_bridged += 1;
+                        events += 1;
                     }
                 }
                 // A clean or reasoned close ends the session normally.
@@ -118,7 +142,58 @@ impl SessionTerminator {
             }
         }
 
-        Ok(summary)
+        Ok(ServeSummary {
+            agent_id: Some(agent_id),
+            events_bridged: events,
+        })
+    }
+
+    /// Runs the enrollment handshake on a token-only connection: expect one control-lane
+    /// `EnrollRequest`, verify + sign through the [`Enroller`], reply with the
+    /// `EnrollGrant`, publish `agent.enrolled`, and return the granted `agent_id`.
+    async fn enroll_bootstrap<S>(&self, session: &mut S) -> Result<String, TerminatorError>
+    where
+        S: Session + Send,
+    {
+        let Some(enroller) = self.enroller.as_ref() else {
+            let _ = session.close_with_reason("enroll_unsupported").await;
+            return Err(TerminatorError::Protocol(
+                "token-only connection, but this terminator has no enrollment handler".to_owned(),
+            ));
+        };
+
+        let frame = session.recv().await?;
+        let Some(Body::EnrollRequest(request)) = frame.envelope.body else {
+            let _ = session.close_with_reason("expected_enroll").await;
+            return Err(TerminatorError::Protocol(
+                "token-only connection's first message was not an EnrollRequest".to_owned(),
+            ));
+        };
+        let correlation_id = frame.envelope.msg_id;
+
+        let grant = match enroller.enroll(&request).await {
+            Ok(grant) => grant,
+            Err(e) => {
+                // Tell the agent why, in a reason code that leaks no gateway internals.
+                let _ = session.close_with_reason(e.close_reason()).await;
+                return Err(TerminatorError::Enroll(e));
+            }
+        };
+
+        let grant_envelope = Envelope {
+            protocol_version: grant.chosen_version,
+            msg_id: mint_msg_id(),
+            correlation_id,
+            timestamp_ms: grant.issued_at.as_millis(),
+            body: Some(Body::EnrollGrant(grant.to_enroll_grant())),
+        };
+        session.send(Channel::Control, &grant_envelope).await?;
+
+        // Announce the enrolled node on the bus under its fenced identity.
+        let event = AgentEvent::enrolled(&grant.agent_id, &grant_envelope.msg_id);
+        self.bridge.publish(&event).await?;
+
+        Ok(grant.agent_id)
     }
 
     /// Demuxes one inbound frame and, if it is a bridgeable agent message, publishes it.
@@ -157,6 +232,15 @@ impl SessionTerminator {
         self.bridge.publish(&event).await?;
         Ok(true)
     }
+}
+
+/// Mints a `msg_id` for a gateway-originated envelope (the `EnrollGrant`). Uniqueness is
+/// best-effort — the field is advisory (agent-protocol.md §2.2) — so an unavailable random
+/// source falls back to a zero id rather than failing the connection.
+fn mint_msg_id() -> String {
+    let mut buf = [0u8; 12];
+    let _ = getrandom::fill(&mut buf);
+    format!("grant_{}", hex::encode(buf))
 }
 
 #[cfg(test)]

@@ -39,6 +39,10 @@ pub enum BootstrapError {
     #[error("certificate error: {0}")]
     Certificate(#[from] rcgen::Error),
 
+    /// A persisted certificate `PEM` could not be decoded to `DER` (PR-09b enrollment).
+    #[error("certificate encoding error: {0}")]
+    CertificateEncoding(String),
+
     /// A filesystem operation on the secrets directory failed.
     #[error("secrets I/O error: {0}")]
     Io(#[from] std::io::Error),

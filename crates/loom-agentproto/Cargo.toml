@@ -27,6 +27,7 @@ serde_json.workspace        = true
 tracing.workspace           = true
 # PR-26 bootstrap-auth: local CA + node-cert signing, enrollment/admin tokens, secrets file.
 rcgen.workspace     = true
+rustls-pki-types.workspace = true   # PR-09b: decode the wire CSR (DER) and the CA cert (PEM→DER) for enrollment
 getrandom.workspace = true
 hex.workspace       = true
 hmac.workspace      = true

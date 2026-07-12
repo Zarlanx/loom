@@ -21,6 +21,7 @@ use rcgen::{
     BasicConstraints, CertificateParams, CertificateSigningRequestParams, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose,
 };
+use rustls_pki_types::{CertificateDer, CertificateSigningRequestDer, pem::PemObject};
 
 use super::error::BootstrapError;
 
@@ -97,7 +98,7 @@ impl LocalCa {
         self.key.serialize_pem()
     }
 
-    /// Signs an agent's certificate signing request into a node certificate,
+    /// Signs an agent's certificate signing request (PEM) into a node certificate,
     /// returning the leaf certificate in PEM.
     ///
     /// The `CSR`'s self-signature is verified while parsing; the issued leaf is
@@ -108,7 +109,49 @@ impl LocalCa {
     /// [`BootstrapError::Certificate`] if the `CSR` is malformed, its self-
     /// signature does not verify, or signing fails.
     pub fn sign_node_cert(&self, csr_pem: &str) -> Result<String, BootstrapError> {
-        let mut csr = CertificateSigningRequestParams::from_pem(csr_pem)?;
+        let csr = CertificateSigningRequestParams::from_pem(csr_pem)?;
+        Ok(self.sign_csr(csr)?.pem())
+    }
+
+    /// Signs an agent's `DER`-encoded `CSR` — the form carried on the wire in
+    /// `EnrollRequest.csr_der` (agent-protocol.md §3a) — into a node certificate,
+    /// returning the leaf certificate as `DER` bytes ready for `EnrollGrant.node_cert_der`.
+    ///
+    /// Same constraints as [`sign_node_cert`](Self::sign_node_cert): the self-signature is
+    /// verified and the leaf is an end-entity `mTLS` identity, never a `CA`.
+    ///
+    /// # Errors
+    /// [`BootstrapError::Certificate`] if the `CSR` is malformed, its self-signature does
+    /// not verify, or signing fails.
+    pub fn sign_node_cert_der(&self, csr_der: &[u8]) -> Result<Vec<u8>, BootstrapError> {
+        let csr = CertificateSigningRequestParams::from_der(&CertificateSigningRequestDer::from(
+            csr_der,
+        ))?;
+        Ok(self.sign_csr(csr)?.der().to_vec())
+    }
+
+    /// The persisted `CA` certificate as `DER` bytes — the trust anchor an
+    /// `EnrollGrant.ca_chain_der` carries so a joining agent can validate the chain.
+    ///
+    /// Decoded from the canonical [`cert_pem`](Self::cert_pem) rather than from the
+    /// reconstructed issuer template, whose re-signed bytes would differ from what agents
+    /// pinned.
+    ///
+    /// # Errors
+    /// [`BootstrapError::CertificateEncoding`] if the persisted `CA` `PEM` cannot be
+    /// decoded (not expected — this crate wrote it).
+    pub fn cert_der(&self) -> Result<Vec<u8>, BootstrapError> {
+        let der = CertificateDer::from_pem_slice(self.cert_pem.as_bytes())
+            .map_err(|e| BootstrapError::CertificateEncoding(e.to_string()))?;
+        Ok(der.to_vec())
+    }
+
+    /// Constrains a parsed `CSR` to an end-entity `mTLS` identity and signs it under this
+    /// `CA`. Shared by the `PEM` and `DER` entry points.
+    fn sign_csr(
+        &self,
+        mut csr: CertificateSigningRequestParams,
+    ) -> Result<rcgen::Certificate, BootstrapError> {
         // Constrain the issued node cert regardless of what the CSR requested: an
         // end-entity mTLS identity, never a CA.
         csr.params.is_ca = IsCa::ExplicitNoCa;
@@ -116,8 +159,7 @@ impl LocalCa {
             ExtendedKeyUsagePurpose::ClientAuth,
             ExtendedKeyUsagePurpose::ServerAuth,
         ];
-        let leaf = csr.signed_by(&self.issuer, &self.key)?;
-        Ok(leaf.pem())
+        Ok(csr.signed_by(&self.issuer, &self.key)?)
     }
 
     /// Builds the parameters for the local `CA` certificate.
@@ -163,12 +205,41 @@ mod tests {
         params.serialize_request(&key).unwrap().pem().unwrap()
     }
 
+    /// Builds an agent-side `CSR` in DER form, as it rides the wire in
+    /// `EnrollRequest.csr_der`.
+    fn agent_csr_der(common_name: &str) -> Vec<u8> {
+        let key = KeyPair::generate().unwrap();
+        let mut params = CertificateParams::new(vec![common_name.to_owned()]).unwrap();
+        params
+            .distinguished_name
+            .push(DnType::CommonName, common_name);
+        params.serialize_request(&key).unwrap().der().to_vec()
+    }
+
     #[test]
     fn a_generated_ca_signs_a_node_csr() {
         let ca = LocalCa::generate().unwrap();
         assert!(ca.cert_pem().contains("BEGIN CERTIFICATE"));
         let leaf = ca.sign_node_cert(&agent_csr("node-1")).unwrap();
         assert!(leaf.contains("BEGIN CERTIFICATE"));
+    }
+
+    #[test]
+    fn a_generated_ca_signs_a_der_csr_and_exposes_its_cert_der() {
+        let ca = LocalCa::generate().unwrap();
+        let leaf_der = ca.sign_node_cert_der(&agent_csr_der("node-der")).unwrap();
+        assert!(!leaf_der.is_empty());
+        // The persisted CA cert decodes to non-empty DER (the EnrollGrant trust anchor).
+        assert!(!ca.cert_der().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_garbage_der_csr_is_rejected() {
+        let ca = LocalCa::generate().unwrap();
+        assert!(matches!(
+            ca.sign_node_cert_der(b"not a der csr"),
+            Err(BootstrapError::Certificate(_))
+        ));
     }
 
     #[test]

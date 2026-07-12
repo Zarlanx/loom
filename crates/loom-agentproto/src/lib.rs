@@ -40,6 +40,8 @@
 
 pub mod bootstrap;
 pub mod bridge;
+pub mod clock;
+pub mod enroll;
 pub mod event;
 pub mod quic;
 pub mod session;
@@ -49,6 +51,8 @@ pub mod wss;
 #[cfg(feature = "test-support")]
 pub mod testing;
 
+pub use clock::{Clock, SystemClock};
+pub use enroll::{EnrollError, Enroller, Grant};
 pub use event::{AgentEvent, AgentEventKind};
 pub use session::{InboundFrame, PeerIdentity, Session, SessionError, WIRE_PROTOCOL_ID};
 pub use terminator::{ServeSummary, SessionTerminator, TerminatorError};

@@ -13,11 +13,36 @@
 //! by. The real host agent is [`loom-hostd`](https://docs.rs/loom-hostd); this fake exists
 //! only to exercise the gateway from the crate that owns it.
 
+use loom_core::Timestamp;
 use loom_proto::{Body, Envelope, codec::Channel};
 use tokio::io::DuplexStream;
 
+use crate::clock::Clock;
 use crate::session::{InboundFrame, Session};
 use crate::wss::WssSession;
+
+/// A [`Clock`] pinned to a fixed instant, so a test can drive enrollment-token expiry
+/// deterministically instead of racing the wall clock.
+#[derive(Debug, Clone, Copy)]
+pub struct FixedClock {
+    millis: i64,
+}
+
+impl FixedClock {
+    /// A clock frozen at `now`.
+    #[must_use]
+    pub fn new(now: Timestamp) -> Self {
+        Self {
+            millis: now.as_millis(),
+        }
+    }
+}
+
+impl Clock for FixedClock {
+    fn now(&self) -> Timestamp {
+        Timestamp::from_millis(self.millis)
+    }
+}
 
 /// Buffer size for the in-process duplex pipe backing a loopback session — comfortably
 /// above any control-channel frame.
@@ -109,6 +134,16 @@ impl FakeAgent {
     /// If the session errors before a frame arrives.
     pub async fn recv(&mut self) -> InboundFrame {
         self.session.recv().await.expect("fake agent recv")
+    }
+
+    /// Receives the next inbound frame, surfacing the [`SessionError`](crate::session::SessionError)
+    /// instead of panicking — so a test can assert the gateway closed with a given reason.
+    ///
+    /// # Errors
+    /// The underlying [`SessionError`](crate::session::SessionError), including
+    /// `Closed { reason }` when the gateway ends the connection.
+    pub async fn recv_result(&mut self) -> Result<InboundFrame, crate::session::SessionError> {
+        self.session.recv().await
     }
 
     /// Closes the connection cleanly.
