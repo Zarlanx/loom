@@ -11,3 +11,7 @@ repository.workspace   = true
 [lints]
 workspace = true
 
+[dependencies]
+# typed library errors (thiserror in libs; loom-core stays otherwise dependency-free)
+thiserror.workspace = true
+
