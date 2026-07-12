@@ -7,6 +7,8 @@
 //! here. Every verb below is a stub that reports which PR gives it teeth; CI invokes
 //! `codegen --check` and `migrate` today, so their no-op success paths are deliberate.
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -62,7 +64,7 @@ enum ImagesAction {
     Build,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().verb {
         Verb::Codegen { check } => {
             // Gains teeth at PR-02 (proto regen) and PR-04/PR-11 (OpenAPI diff gate).
@@ -72,7 +74,7 @@ fn main() {
         Verb::Golden {
             action: GoldenAction::Regen,
         } => {
-            println!("xtask golden regen: no golden vectors yet (land in PR-02)");
+            golden_regen()?;
         }
         Verb::Migrate { backend } => {
             // Gains teeth at PR-05 (store + migration set).
@@ -87,4 +89,35 @@ fn main() {
             println!("xtask release: release pipeline lands with the first tagged release");
         }
     }
+    Ok(())
+}
+
+/// Regenerate the checked-in `loom-proto` golden vectors from the canonical message set
+/// (workspace-setup.md §5). The blessed path for an intentional additive schema change;
+/// CI only ever *verifies* these bytes, never regenerates them.
+fn golden_regen() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("crates")
+        .join("loom-proto")
+        .join("tests")
+        .join("golden");
+    std::fs::create_dir_all(&dir)?;
+
+    // Clear stale vectors first: a `.bin` left behind after a vector is renamed or
+    // removed would otherwise linger, and the golden test only iterates the current
+    // set — so regen must leave exactly the canonical vectors on disk.
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        if entry.path().extension().is_some_and(|ext| ext == "bin") {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+
+    for vector in loom_proto::golden::vectors() {
+        let path = dir.join(format!("{}.bin", vector.name));
+        std::fs::write(&path, &vector.bytes)?;
+        println!("wrote {} ({} bytes)", path.display(), vector.bytes.len());
+    }
+    Ok(())
 }

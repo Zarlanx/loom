@@ -12,4 +12,5 @@ repository.workspace   = true
 workspace = true
 
 [dependencies]
-clap.workspace   = true
+clap.workspace       = true
+loom-proto.workspace = true
