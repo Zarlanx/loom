@@ -35,6 +35,7 @@ rustls            = { version = "=0.23", default-features = false, features = ["
 tokio-tungstenite = { version = "=0.24", features = ["rustls-tls-native-roots"] }
 prost             = "=0.13"
 prost-build       = "=0.13"
+protox            = "=0.7.1"   # pure-Rust protoc: hermetic prost codegen, no system protoc (workspace-setup.md §4)
 serde             = { version = "1", features = ["derive"] }
 serde_json        = "1"
 toml              = "0.8"
