@@ -1,0 +1,28 @@
+# Copyright 2026 Loom Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Buf workspace config, kept at the repo root so `buf` invoked from the repo root
+# (the way CI and code-review bots run it, without being pointed at a subdirectory)
+# resolves the workspace. It marks `proto/` as the module root, so the `loom.v1` package
+# resolves at `loom/v1/*.proto` and every `import "loom/v1/…"` finds its target
+# (Buf PACKAGE_DIRECTORY_MATCH). Rooting the config here — rather than under `proto/` —
+# is what lets a bare `buf build` / `buf lint` from the repo root resolve those imports;
+# a `buf.yaml` nested in `proto/` is only consulted when Buf is aimed straight at that dir.
+#
+# The workspace build compiles these sources through protox in
+# `crates/loom-proto/build.rs` and never reads this file; it exists only so Buf-based
+# tooling sees a correct module layout.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  ignore_only:
+    # `RejectReason` deliberately uses `LOCAL_POLICY` (not `_UNSPECIFIED`) as its zero
+    # value: the proto3 default must mean "owner's local policy", so an unset reason can
+    # never be mistaken for a real control-plane override (agent-protocol.md §3c). That is
+    # an intentional wire-contract choice, so `ENUM_ZERO_VALUE_SUFFIX` is waived for this
+    # one file rather than the schema being reshaped to satisfy the linter.
+    ENUM_ZERO_VALUE_SUFFIX:
+      - proto/loom/v1/job.proto

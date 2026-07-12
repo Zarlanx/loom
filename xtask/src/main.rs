@@ -7,6 +7,8 @@
 //! here. Every verb below is a stub that reports which PR gives it teeth; CI invokes
 //! `codegen --check` and `migrate` today, so their no-op success paths are deliberate.
 
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -62,7 +64,7 @@ enum ImagesAction {
     Build,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().verb {
         Verb::Codegen { check } => {
             // Gains teeth at PR-02 (proto regen) and PR-04/PR-11 (OpenAPI diff gate).
@@ -72,7 +74,7 @@ fn main() {
         Verb::Golden {
             action: GoldenAction::Regen,
         } => {
-            println!("xtask golden regen: no golden vectors yet (land in PR-02)");
+            golden_regen()?;
         }
         Verb::Migrate { backend } => {
             // Gains teeth at PR-05 (store + migration set).
@@ -87,4 +89,59 @@ fn main() {
             println!("xtask release: release pipeline lands with the first tagged release");
         }
     }
+    Ok(())
+}
+
+/// Regenerate the checked-in `loom-proto` golden vectors from the canonical message set
+/// (workspace-setup.md §5). The blessed path for an intentional additive schema change;
+/// CI only ever *verifies* these bytes, never regenerates them.
+fn golden_regen() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("crates")
+        .join("loom-proto")
+        .join("tests")
+        .join("golden");
+    std::fs::create_dir_all(&dir)?;
+
+    // Stage the full set into a sibling temp dir first, so a mid-generation failure (a
+    // panicking `vectors()` or a failed write) can never empty or half-populate the live
+    // fixtures directory: nothing under `dir` is touched until every vector is written.
+    let staging = dir.with_extension("regen-tmp");
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging)?;
+    }
+    std::fs::create_dir_all(&staging)?;
+
+    let vectors = loom_proto::golden::vectors();
+    for vector in &vectors {
+        std::fs::write(staging.join(vector.filename()), &vector.bytes)?;
+    }
+
+    // Generation succeeded — swap the completed set in with two whole-directory renames,
+    // so the live `golden/` dir is never partially deleted. At every instant it is either
+    // the complete old set or the complete new set: move the live dir aside to
+    // `golden.old`, move the fully-staged dir into its place, then drop `golden.old`.
+    // This also discards any stale `.bin` from a renamed/removed vector (it leaves with
+    // `golden.old`), so the live set matches the current vectors exactly.
+    //
+    // Recovery (a leftover `.old` dir): if the process dies between the two renames,
+    // `golden/` is momentarily absent while `golden.old` (the previous complete set) and
+    // `golden.regen-tmp` (the complete new set) both survive — no vector is ever lost. A
+    // stale `golden.old` is simply removed at the top of the next swap, so re-running
+    // `xtask golden regen` (or renaming either sibling back to `golden/`) restores a
+    // clean tree.
+    let backup = dir.with_extension("old");
+    if backup.exists() {
+        std::fs::remove_dir_all(&backup)?;
+    }
+    std::fs::rename(&dir, &backup)?;
+    std::fs::rename(&staging, &dir)?;
+    std::fs::remove_dir_all(&backup)?;
+
+    for vector in &vectors {
+        let path = dir.join(vector.filename());
+        println!("wrote {} ({} bytes)", path.display(), vector.bytes.len());
+    }
+    Ok(())
 }
