@@ -46,6 +46,7 @@ tracing           = "0.1"
 tracing-subscriber = { version = "=0.3", features = ["env-filter", "json"] }
 thiserror         = "2"
 anyhow            = "1"
+proptest          = "1"          # property-based tests (dev-dependency only; loom-core invariants)
 # internal crates referenced by path so intra-workspace edges are explicit:
 loom-proto      = { path = "crates/loom-proto" }
 loom-core       = { path = "crates/loom-core" }
